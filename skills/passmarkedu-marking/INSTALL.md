@@ -24,6 +24,7 @@ npx skills@latest add PassMarkedu/skills
 
 - Codex App：把对话切到「完全访问 / Full access」，否则连不上 PassMarkedu。
 - 建议使用能力较强、能看图的模型；能力较弱的模型可能判错，首页会提示「可信度低」。
+- 能选推理强度的应用（如 Codex）请选「高 / high」：中等强度实测会把评分标准里的正确答案当成学生的答案抄进证据。
 
 ## 使用
 

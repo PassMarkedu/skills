@@ -149,10 +149,8 @@ For each scoring unit, go through its `steps` in order. Each step has a `type`; 
 
 For every step also send:
 - `confidence`: `high`, `medium` or `low` (`low` whenever the handwriting is unclear or you are unsure).
-- `evidence`: the student's exact words/numbers for this step, copied from your transcription in the student's own language (short). Never the mark scheme's words.
-- `label`: a few words naming the step, in the teacher's language, for a student to read (≤10 Chinese characters or ~5 English words), e.g. "求 dx/dθ", "代入上下限", "最终答案".
-- `note`: when the step is not earned, one short sentence saying what is wrong, in plain words a student understands — no mark-scheme jargon (no "condone", "o.e.", "dM1").
-- `should`: when the step is not earned, what the correct working or answer is (e.g. "∫sec²θ dθ = tanθ，得到 (1/16)tanθ"). Write formulas readably, not in LaTeX.
+- `evidence`: the student's exact words/numbers for this step, copied character for character from your transcription (short). Never the mark scheme's words, and never the correct answer when the student wrote something else — PassMarkedu checks awarded evidence against your transcription and flags anything it cannot find there.
+- `note`: only for special cases ("SC"), `level` steps (the reason) and teacher corrections.
 - `awarded`: only for `point` steps whose `step_marks` is more than 1 (M2, K2 …) and for `level` steps.
 
 Rules:
@@ -161,12 +159,23 @@ Rules:
 - Special cases ("SC B1 if …", "SC M1M0A0"): when the student's work matches a special case, set `present`/`awarded` on the listed steps so that the total equals what the special case gives, and say "SC" in the `note`.
 - Steps with `"visual": true` are judged on a drawing. Judge them from your description in pass 1; they are always shown to the teacher for review.
 - Blank or unattempted parts: send `"attempted": false` and no steps.
-- Add a short `comment` per unit (in the teacher's language): what earned marks, what lost marks, and the correct key step. Keep it to 1–3 sentences, in words a student understands.
-- Add a `headline` per unit that lost marks: the main reason, ≤20 Chinese characters (or ~10 English words), e.g. "没有积分到 tanθ，也没代入上下限". It is written in red beside the score on the student's answer page.
+### Explain each unit (you write the explanation; PassMarkedu decides the marks)
+
+The marked PDF shows your explanation to the student and the teacher. Write it in the teacher's language, in words a student understands, about **the student's work** — not about mark-scheme steps. Per scoring unit send:
+
+- `transcript`: your pass-1 transcription of this unit, as written (line breaks allowed, ≤4000 characters).
+- `final_answer`: the student's final answer copied exactly as written (e.g. `"17ln3 − 4/3"`), or `""` if there is none. It is printed for every unit so the teacher can compare it with the handwriting.
+- `comment`: one sentence: the overall verdict (e.g. "分部积分方向对，但求导 ln(3x) 出错，原函数和答案都错了。").
+- `headline` (units that lost marks): the main reason, ≤20 Chinese characters (or ~10 English words), e.g. "没有积分到 tanθ，也没代入上下限". Printed in red beside the score on the answer page.
+- `mistakes` (units that lost marks): 1–4 items `{"wrote", "why", "should"}`, one per **actual error in the student's work**, in the order it happened — not one per lost mark. If one early error costs five marks, that is one item. `wrote`: the student's words from the transcript; `why`: what is wrong, plainly (no "condone", "o.e.", "dM1"); `should`: the correct line. Formulas readable, not LaTeX.
+- `solution` (units that lost marks, and unattempted units): 2–6 key lines of a correct method, ending with the correct answer.
+- `scheme_conflict` (rare): if you believe PassMarkedu's scoring of this unit contradicts the official mark scheme (for example a mark blocked by the wrong prerequisite), say so here in one or two sentences. Only the teacher sees it. **Never** put such disputes, step ids (`main.s3`), or words about PassMarkedu's server or configuration into the student-facing fields — those submissions are rejected with 422.
+
+Units at full marks need only `transcript`, `final_answer` and `comment`. Unattempted units: `"attempted": false`, optionally a `solution`.
 
 ### Look again at the doubtful steps (once)
 
-When every question is judged, send the evidence JSON to `POST /score` (plain JSON body, same content you will submit; no PDF is made, nothing is charged again). The response has `recheck`: a short list of steps (low confidence, drawings, unclear dependencies, numbers PassMarkedu could not compare, missing judgements, parts left unmarked) with the reason and the step's question.
+When every question is judged, send the evidence JSON to `POST /score` (plain JSON body, same content you will submit; no PDF is made, nothing is charged again). The response has `recheck`: a short list of steps (low confidence, drawings, unclear dependencies, numbers PassMarkedu could not compare, missing judgements, parts left unmarked, and units whose awarded evidence or final answer is not in your transcript — reason `evidence_not_in_transcript`) with the reason and the step's question. For `evidence_not_in_transcript`, read the student's final lines again on the page image and copy what is actually written; do not change the transcript to match the mark scheme.
 
 Look at **only those steps** again on the page images, zooming in, and correct your evidence where you were wrong. For reason `correctness_required` (an accuracy mark whose scheme demands correct work, cao or cso): compare the student's expression or value **symbol by symbol** with the one in the step description — a right-looking form with a wrong term, power, sign or function (e.g. `3cos²t` where the scheme has `3sin²t cos t`) is not earned. Do this once; do not loop. Then submit (section 5). Tell the teacher in one line: "正在复核 N 个不确定的得分点……".
 
