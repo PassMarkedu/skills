@@ -3,9 +3,9 @@ name: passmarkedu-marking
 description: Mark a student's scanned CAIE (Cambridge International AS & A Level) or Pearson Edexcel IAL exam script against the official mark scheme, point by point, and return a marked PDF with per-part scores, comments, the official grade and the mark-scheme pages. Use when a teacher uploads a scanned exam paper (PDF or photos) and asks to mark / grade / 判分 / 批改 / 阅卷 it, or asks to change a mark on a paper this skill already marked.
 ---
 
-# PassMarkEdu 阅卷 Skill
+# PassMarkedu 阅卷 Skill
 
-You mark a student's handwritten exam script against the **official** mark scheme held by PassMarkEdu, then PassMarkEdu adds the marks up, grades the paper and builds the marked PDF. You never add marks up or decide the grade yourself — the server does that from your per-point evidence. This keeps results consistent even for weaker models.
+You mark a student's handwritten exam script against the **official** mark scheme held by PassMarkedu, then PassMarkedu adds the marks up, grades the paper and builds the marked PDF. You never add marks up or decide the grade yourself — the server does that from your per-point evidence. This keeps results consistent even for weaker models.
 
 Talk to the teacher in the language they use (default Chinese). Keep messages short.
 
@@ -22,7 +22,7 @@ Talk to the teacher in the language they use (default Chinese). Keep messages sh
 ## 0.5 Check for an update (once per conversation, silently)
 
 `GET /skill` (no login needed) returns `{version, zip_url, npx_command}`. Compare `version` with the `VERSION` file next to this SKILL.md. If the server's is newer, tell the teacher once, in one line, then carry on with the current version:
-"PassMarkEdu 阅卷 Skill 有新版本（<version>）。更新方法：把这句话发给我——『请从 <zip_url> 下载 PassMarkEdu 阅卷 Skill，解压后覆盖安装到原来的 passmarkedu-marking 文件夹』；WorkBuddy 用户也可以在 SkillHub 里更新。"
+"PassMarkedu 阅卷 Skill 有新版本（<version>）。更新方法：把这句话发给我——『请从 <zip_url> 下载 PassMarkedu 阅卷 Skill，解压后覆盖安装到原来的 passmarkedu-marking 文件夹』；WorkBuddy 用户也可以在 SkillHub 里更新。"
 If the call fails, skip this step without mentioning it.
 
 ## 1. Log in
@@ -30,17 +30,17 @@ If the call fails, skip this step without mentioning it.
 **If a saved token exists, just use it — say nothing about logging in.** Only run this section when there is no saved token, or a call returns 401.
 
 Tell the teacher first, in one short message, which case it is:
-- no saved token (first use in this app): "第一次使用需要连接你的 PassMarkEdu 账号。还没有账号的话，打开下面的链接后先注册（手机号即可），再点「授权」。"
+- no saved token (first use in this app): "第一次使用需要连接你的 PassMarkedu 账号。还没有账号的话，打开下面的链接后先注册（手机号即可），再点「授权」。"
 - a call returned 401 (the saved authorisation expired after 90 days or was revoked): "之前的授权已过期（有效期 90 天），需要重新授权一次，之前的批改记录不受影响。"
 
 Then:
 1. `POST /device-code` (no body). Response: `user_code`, `verification_uri_complete`, `device_code`, `interval`, `expires_in`.
-2. Give the teacher the clickable link `verification_uri_complete` and the code: "打开链接 → 登录（或注册）PassMarkEdu → 核对授权码 <user_code> → 点「授权」。授权后回到这里，我会自动继续。"
+2. Give the teacher the clickable link `verification_uri_complete` and the code: "打开链接 → 登录（或注册）PassMarkedu → 核对授权码 <user_code> → 点「授权」。授权后回到这里，我会自动继续。"
 3. Poll `POST /token` with JSON `{"device_code": "..."}` every `interval` seconds (at least 5 s) until it returns 200:
    - 400 `{"error":"authorization_pending"}` → keep waiting; `slow_down` → wait 5 s longer; `access_denied` → tell the teacher authorisation was declined and stop; `expired_token` (the code is valid for 10 minutes) → tell the teacher the link timed out and start again from step 1.
-4. Save `access_token` to the token file, tell the teacher "已连接 PassMarkEdu 账号", and continue with the task they asked for. Send the token as `Authorization: Bearer <token>` on every later call.
+4. Save `access_token` to the token file, tell the teacher "已连接 PassMarkedu 账号", and continue with the task they asked for. Send the token as `Authorization: Bearer <token>` on every later call.
 
-If a call returns 401 again right after a fresh login, stop and tell the teacher to contact PassMarkEdu support — do not loop.
+If a call returns 401 again right after a fresh login, stop and tell the teacher to contact PassMarkedu support — do not loop.
 
 ## 2. Decide the mode
 
@@ -74,7 +74,7 @@ For every question, in this order, stop at the first that works:
 Send all questions in one call: `POST /identify` with `{"items": [{"key": "Q1", "locator": "...", "text": "..."}, ...]}` (give whichever of `locator`/`text` you have). Each item returns up to 3 `candidates` (`question_id`, `unit_code`, `year`, `session`, `paper_number`, `question_number`, `preview`).
 
 - Pick the candidate whose `preview` matches the printed question. The same question is sometimes reused in two papers (e.g. an old paper and a later variant); pick the one matching any printed reference, otherwise the most recent, and mention the alternative to the teacher.
-- **No candidate** for a question → crop that question's area into a JPEG (under 8 MB) and call `POST /identify-photo` with `{"image_base64": "...", "mime_type": "image/jpeg"}`. This uses PassMarkEdu's image recognition and does not use the teacher's photo-search allowance. Use it only for questions the text step could not match.
+- **No candidate** for a question → crop that question's area into a JPEG (under 8 MB) and call `POST /identify-photo` with `{"image_base64": "...", "mime_type": "image/jpeg"}`. This uses PassMarkedu's image recognition and does not use the teacher's photo-search allowance. Use it only for questions the text step could not match.
 - Still nothing → ask the teacher where that question comes from (paper and question number), or leave it out and say so.
 
 Keep the list of chosen `question_id`s **in the order the questions appear in the script**.
@@ -84,8 +84,8 @@ Keep the list of chosen `question_id`s **in the order the questions appear in th
 `GET /papers?board=..&code=..&component=..&variant=..&series=..` (URL-encode the series).
 
 - 200 → the checklist (see `references/api.md`). The first fetch of a paper uses one of the account's paper credits; fetching the same paper again is free.
-- 404 → tell the teacher PassMarkEdu has no such paper and ask them to double-check the cover values.
-- 429 with `"code": "quota_exceeded"` → say: "免费额度已用完（免费账号可批 1 份试卷）。订阅 PassMarkEdu 后可不限次使用：<base>/pricing" and stop.
+- 404 → tell the teacher PassMarkedu has no such paper and ask them to double-check the cover values.
+- 429 with `"code": "quota_exceeded"` → say: "免费额度已用完（免费账号可批 1 份试卷）。订阅 PassMarkedu 后可不限次使用：<base>/pricing" and stop.
 - If `paper.supported` is false, some parts have no structured mark scheme yet. Tell the teacher those parts will show "未自动判分", then continue with the rest.
 
 ## 3B. Fetch the checklist (mixed questions)
@@ -143,7 +143,7 @@ For each scoring unit, go through its `steps` in order. Each step has a `type`; 
 | `type` | what you send | what you must NOT do |
 |---|---|---|
 | `point` (default) | `present`: answer the step's `check` question if it has one (otherwise the `description`) — yes → `true` | do not guess; every condition in the question must hold |
-| `numeric` | `value`: the student's final answer copied exactly as written (e.g. `"-0.945"`, `"3/8"`), and `present: true` if they wrote one | do not judge whether it is right — PassMarkEdu compares it |
+| `numeric` | `value`: the student's final answer copied exactly as written (e.g. `"-0.945"`, `"3/8"`), and `present: true` if they wrote one | do not judge whether it is right — PassMarkedu compares it |
 | `pick_n` | `matched`: the indices (0-based) of the `pick.options` the student's answer states; ignore anything on `pick.reject`; `present: true` if any matched | do not count marks yourself |
 | `level` | `level`: the level whose descriptor fits best (0 if none), `awarded`: marks within that level's band, and the reason in `note` | do not skip the reason |
 
@@ -166,7 +166,7 @@ Rules:
 
 ### Look again at the doubtful steps (once)
 
-When every question is judged, send the evidence JSON to `POST /score` (plain JSON body, same content you will submit; no PDF is made, nothing is charged again). The response has `recheck`: a short list of steps (low confidence, drawings, unclear dependencies, numbers PassMarkEdu could not compare, missing judgements, parts left unmarked) with the reason and the step's question.
+When every question is judged, send the evidence JSON to `POST /score` (plain JSON body, same content you will submit; no PDF is made, nothing is charged again). The response has `recheck`: a short list of steps (low confidence, drawings, unclear dependencies, numbers PassMarkedu could not compare, missing judgements, parts left unmarked) with the reason and the step's question.
 
 Look at **only those steps** again on the page images, zooming in, and correct your evidence where you were wrong. For reason `correctness_required` (an accuracy mark whose scheme demands correct work, cao or cso): compare the student's expression or value **symbol by symbol** with the one in the step description — a right-looking form with a wrong term, power, sign or function (e.g. `3cos²t` where the scheme has `3sin²t cos t`) is not earned. Do this once; do not loop. Then submit (section 5). Tell the teacher in one line: "正在复核 N 个不确定的得分点……".
 
