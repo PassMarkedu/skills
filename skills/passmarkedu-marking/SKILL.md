@@ -125,7 +125,7 @@ Page numbers: page 1 = first page of the uploaded PDF, counting every page inclu
 
 - `page`: the page where the answer to that part **starts** (if the working continues or a drawing sits on a later page, still give the starting page and mention the other page in your transcription);
 - `y`: how far down that page the answer starts, as a fraction 0–1 (0 = top edge, 0.5 = middle);
-- a faithful transcription of what the candidate wrote, line by line, including crossed-out work (mark it as crossed out) and final answers;
+- a faithful transcription of what the candidate wrote, line by line, including crossed-out work (mark it as crossed out) and final answers. **Copy mistakes as they are — never correct the working while transcribing.** If a line looks mathematically wrong, it probably is: write `8y·y² dy = x·e dx` if that is what is on the page, not the correct `8y e^(y²) dy = x dx`. Every mark is judged from this transcript;
 - whether the part was attempted at all.
 
 For drawings (graphs, sketches, box plots, histograms, diagrams), describe what is drawn precisely: axes and scales, plotted points/end-points/intercepts, shape, labels, and read values off the grid. Zoom in on the page image if your tool allows it.
@@ -154,7 +154,7 @@ For each scoring unit, go through its `steps` in order. Each step has a `type`; 
 
 For every step also send:
 - `confidence`: `high`, `medium` or `low` (`low` whenever the handwriting is unclear or you are unsure).
-- `evidence`: the candidate's exact words/numbers for this step, copied character for character from your transcription (short). Never the mark scheme's words, and never the correct answer when the candidate wrote something else.
+- `evidence`: the specific line(s) of your transcription that earn or fail **this** step, copied character for character, ≤150 characters. Never the whole transcript — the same long quote pasted into several steps is flagged as not judged one by one. Never the mark scheme's words, and never the correct answer when the candidate wrote something else.
 - `note`: only for special cases ("SC"), `level` steps (the reason) and user corrections.
 - `awarded`: only for `point` steps whose `step_marks` is more than 1 (M2, K2 …) and for `level` steps.
 
@@ -180,7 +180,7 @@ Units at full marks need only `transcript`, `final_answer` and `comment`. Unatte
 
 ### Look again at the doubtful steps (once)
 
-When every question is judged, send the evidence JSON to `POST /score` (plain JSON body, same content you will submit; no PDF is made, nothing is charged again). The response has `recheck`: a short list of steps (low confidence, drawings, unclear dependencies, numbers PassMarkedu could not compare, missing judgements, parts left unmarked, and units whose final answer has a value that is not in your transcript — reason `evidence_not_in_transcript`) with the reason and the step's question. For `evidence_not_in_transcript`, read the candidate's final lines again on the page image and copy what is actually written; do not change the transcript to match the mark scheme.
+When every question is judged, send the evidence JSON to `POST /score` (plain JSON body, same content you will submit; no PDF is made, nothing is charged again). The response has `recheck`: a short list of steps (low confidence, drawings, unclear dependencies, numbers PassMarkedu could not compare, missing judgements, parts left unmarked, units whose final answer has a value that is not in your transcript — reason `evidence_not_in_transcript` — and units where one long quote was pasted into several steps — reason `evidence_not_specific`) with the reason and the step's question. For `evidence_not_specific`, judge that unit's steps again one at a time, quoting the one line each step rests on. For `evidence_not_in_transcript`, read the candidate's final lines again on the page image and copy what is actually written; do not change the transcript to match the mark scheme.
 
 Look at **only those steps** again on the page images, zooming in, and correct your evidence where you were wrong. For reason `correctness_required` (an accuracy mark whose scheme demands correct work, cao or cso): compare the candidate's expression or value **symbol by symbol** with the one in the step description — a right-looking form with a wrong term, power, sign or function (e.g. `3cos²t` where the scheme has `3sin²t cos t`) is not earned. Do this once; do not loop. Then submit (section 5). Tell the user in one line: "正在复核 N 个不确定的得分点……".
 
@@ -204,7 +204,7 @@ Before submitting, check: every `unit_id` of every question appears once; every 
 - 422 → your evidence JSON does not match the checklist; fix the field it names and resubmit.
 - 413 → the scan is over 50 MB; ask the user for a smaller scan.
 - 201 → reply in the chat, in this order, short:
-  1. If `reliability.level` is `"low"`, first: "这次判分可信度偏低（几乎全部判为得分，或证据与评分标准雷同），建议换用更强的模型重新批改，或逐题核对后再使用。"
+  1. If `reliability.level` is `"low"`, first: "这次判分可信度偏低（几乎全部判为得分、证据与评分标准雷同，或多个小问没有逐点给证据），建议换用更强的模型重新批改，或逐题核对后再使用。"
   2. The result: total `total` out of `max_total` minus the `unsupported` marks, and the grade — `grade`, or `grade_range` as "B–A（取决于未批改的 N 分）", or "暂不定级" when both are null. For mixed questions, say it is a folded indicative grade and list each question's source.
   3. One line per question with its score; unsupported parts as "暂不支持自动批改，未计入".
   4. If `review_items` is not empty: "发出去之前，建议先看这几处：" then one line per item — label, page (`答卷第 N 页`), its `notes`, and for `evidence_not_in_transcript` the value you read (`final_answer`) so it can be compared with the page; for `scheme_conflict`, your one-sentence reason. Offer to change any of them (section 6).

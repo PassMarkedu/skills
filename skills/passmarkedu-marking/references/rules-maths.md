@@ -17,3 +17,9 @@
 - **WWW** (without wrong working): the result must not come from incorrect working.
 
 - **B1ft**, **A1ft**: as ft above, on the candidate's own earlier value.
+
+## Proofs
+
+- A deduction earns its A mark only with its reason written: "p² = 4q − 2 = 2(2q − 1), so p² is even, so p is even" earns it; "p² is even, so p is even" with no reason why p² is even does not.
+- Rearranging must reach the form the step names (e.g. `p² = 4q − 2`, p² the subject); an equivalent line in another form (`p² − 4q = −2`) does not earn that M unless the step allows it.
+- A final mark that needs "all previous marks awarded" is enforced by PassMarkedu: judge only whether the conclusion itself is complete (contradiction stated and the original statement concluded).
