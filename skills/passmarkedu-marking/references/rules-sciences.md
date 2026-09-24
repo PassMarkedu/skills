@@ -11,7 +11,7 @@ Science mark schemes are lists of **marking points**, not method/answer chains. 
 
 ## Calculations
 
-- These are usually `numeric` steps: copy the student's final value exactly (with the number of figures they wrote) into `value`; PassMarkedu checks it.
+- These are usually `numeric` steps: copy the student's final value exactly (with the number of figures they wrote) into `value`; PassMarkEdu checks it.
 - **ecf / TE / "error carried forward" / "transferred error"**: a later step can be earned using the student's own wrong earlier value; judge the method with their numbers.
 - **Units**: award only if the scheme asks for a unit and the student's unit is right; a missing unit loses only the mark the scheme ties to the unit.
 - **Significant figures**: follow the scheme (often "2 or 3 s.f."); do not penalise extra figures unless the scheme says so.

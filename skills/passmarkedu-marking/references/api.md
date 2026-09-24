@@ -1,6 +1,6 @@
-# PassMarkedu marking-kit API
+# PassMarkEdu marking-kit API
 
-Base: `<PASSMARK_BASE_URL or https://passmarkedu.com>/api/v1/marking-kit`. All endpoints except login and the PDF link need `Authorization: Bearer <token>`.
+Base: `<PASSMARKEDU_BASE_URL or https://passmarkedu.com>/api/v1/marking-kit`. All endpoints except login and the PDF link need `Authorization: Bearer <token>`.
 
 ## Login (device code)
 
