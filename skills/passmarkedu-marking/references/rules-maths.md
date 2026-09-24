@@ -20,6 +20,6 @@
 
 ## Proofs
 
-- A deduction earns its A mark only with its reason written: "p² = 4q − 2 = 2(2q − 1), so p² is even, so p is even" earns it; "p² is even, so p is even" with no reason why p² is even does not.
+- Judge a deduction exactly as the step's `check` (or description) states it. Some schemes accept a bare "p² = 4q − 2, so p² is even, so p is even" (WMA14 June 2025 Q10: "it is not necessary to factorise 4q − 2"); do not demand more than the scheme does.
 - Rearranging must reach the form the step names (e.g. `p² = 4q − 2`, p² the subject); an equivalent line in another form (`p² − 4q = −2`) does not earn that M unless the step allows it.
 - A final mark that needs "all previous marks awarded" is enforced by PassMarkedu: judge only whether the conclusion itself is complete (contradiction stated and the original statement concluded).
