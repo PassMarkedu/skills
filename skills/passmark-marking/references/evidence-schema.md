@@ -34,7 +34,8 @@ Field rules:
 | `attempted` | `false` for blank parts; then omit `steps`. |
 | `page` | 1-based page of the uploaded PDF where the answer starts (count every page). |
 | `y` | 0–1, how far down that page the answer starts. |
-| `comment` | 1–3 sentences for the teacher, ≤1000 characters. |
+| `comment` | 1–3 sentences a student understands, ≤1000 characters. |
+| `headline` | Units that lost marks: the main reason in ≤20 Chinese characters; printed beside the score on the answer page. |
 | `steps[].step_id` | From the checklist. Give every step of the unit; for alternative routes, the steps of the route(s) the student used (other routes may be left out). Missing steps on the chosen route count as not earned and are flagged. |
 | `steps[].present` | `true` / `false` (JSON booleans). |
 | `steps[].awarded` | Integer: `point` steps with `step_marks` > 1, and `level` steps (marks within the level's band). |
@@ -43,4 +44,6 @@ Field rules:
 | `steps[].level` | `level` steps: the level reached (0 = none). |
 | `steps[].confidence` | `high` / `medium` / `low`. |
 | `steps[].evidence` | Short quote of the student's work, ≤1000 characters. |
-| `steps[].note` | Short reason when not earned (or the teacher's correction reason). |
+| `steps[].label` | A few words naming the step for students (e.g. "求 dx/dθ"). |
+| `steps[].note` | When not earned: what is wrong, in plain words (or the teacher's correction reason). |
+| `steps[].should` | When not earned: the correct working or answer, formulas written readably. |

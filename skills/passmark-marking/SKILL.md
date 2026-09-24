@@ -148,7 +148,9 @@ For each scoring unit, go through its `steps` in order. Each step has a `type`; 
 For every step also send:
 - `confidence`: `high`, `medium` or `low` (`low` whenever the handwriting is unclear or you are unsure).
 - `evidence`: the student's exact words/numbers for this step, copied from your transcription in the student's own language (short). Never the mark scheme's words.
-- `note`: one short sentence for the teacher when the step is not earned: what is wrong and what the correct working is.
+- `label`: a few words naming the step, in the teacher's language, for a student to read (≤10 Chinese characters or ~5 English words), e.g. "求 dx/dθ", "代入上下限", "最终答案".
+- `note`: when the step is not earned, one short sentence saying what is wrong, in plain words a student understands — no mark-scheme jargon (no "condone", "o.e.", "dM1").
+- `should`: when the step is not earned, what the correct working or answer is (e.g. "∫sec²θ dθ = tanθ，得到 (1/16)tanθ"). Write formulas readably, not in LaTeX.
 - `awarded`: only for `point` steps whose `step_marks` is more than 1 (M2, K2 …) and for `level` steps.
 
 Rules:
@@ -157,7 +159,8 @@ Rules:
 - Special cases ("SC B1 if …", "SC M1M0A0"): when the student's work matches a special case, set `present`/`awarded` on the listed steps so that the total equals what the special case gives, and say "SC" in the `note`.
 - Steps with `"visual": true` are judged on a drawing. Judge them from your description in pass 1; they are always shown to the teacher for review.
 - Blank or unattempted parts: send `"attempted": false` and no steps.
-- Add a short `comment` per unit (in the teacher's language): what earned marks, what lost marks, and the correct key step. Keep it to 1–3 sentences.
+- Add a short `comment` per unit (in the teacher's language): what earned marks, what lost marks, and the correct key step. Keep it to 1–3 sentences, in words a student understands.
+- Add a `headline` per unit that lost marks: the main reason, ≤20 Chinese characters (or ~10 English words), e.g. "没有积分到 tanθ，也没代入上下限". It is written in red beside the score on the student's answer page.
 
 ### Look again at the doubtful steps (once)
 
