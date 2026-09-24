@@ -38,7 +38,7 @@ Field rules:
 | `steps[].step_id` | From the checklist. Give every step of the unit; for alternative routes, the steps of the route(s) the student used (other routes may be left out). Missing steps on the chosen route count as not earned and are flagged. |
 | `steps[].present` | `true` / `false` (JSON booleans). |
 | `steps[].awarded` | Integer: `point` steps with `step_marks` > 1, and `level` steps (marks within the level's band). |
-| `steps[].value` | `numeric` steps: the student's final answer copied exactly as written (text). PassMark compares it. |
+| `steps[].value` | `numeric` steps: the student's final answer copied exactly as written (text). PassMarkedu compares it. |
 | `steps[].matched` | `pick_n` steps: list of 0-based indices into `pick.options` that the student states. |
 | `steps[].level` | `level` steps: the level reached (0 = none). |
 | `steps[].confidence` | `high` / `medium` / `low`. |
