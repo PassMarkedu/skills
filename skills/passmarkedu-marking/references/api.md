@@ -30,7 +30,9 @@ grade_boundaries {series, raw_max_mark, thresholds:[{grade, mark}], official_url
 usage            {is_premium, free_papers_total, free_papers_used, free_papers_remaining, subscribe_url}
 ```
 
-Errors: 400 bad cover values; 404 no such paper; 429 `{"code":"quota_exceeded", "meter":"marking_papers", ...}` → free credit used up, point the teacher to `usage.subscribe_url` / `<base>/pricing`.
+`paper.unsupported[]` (`{label, marks}`) lists parts with no structured mark scheme yet: announce them before marking and leave them out.
+
+Errors: 400 bad cover values; 404 no such paper, or `detail` starting `paper_not_supported` when no part of the paper can be auto-marked (nothing is charged); 429 `{"code":"quota_exceeded", "meter":"marking_papers", ...}` → free credit used up, point the user to `usage.subscribe_url` / `<base>/pricing`.
 
 ## Mixed questions (§546)
 
@@ -42,7 +44,7 @@ Errors: 400 bad cover values; 404 no such paper; 429 `{"code":"quota_exceeded", 
 
 ## Dry run
 
-`POST /score` — JSON body = the evidence JSON. Scores without making a PDF and returns `{total, max_total, grade, units[], flagged[], recheck[], reliability}`. `recheck[]`: `{unit_id, label, step_id, mark_code, reasons[], check}` — the steps worth one more look. `reliability`: `{level: "ok"|"low", reasons[]}`.
+`POST /score` — JSON body = the evidence JSON. Scores without making a PDF and returns `{total, max_total, grade, grade_range, unsupported[], units[], flagged[], review_items[], recheck[], reliability}`. `recheck[]`: `{unit_id, label, step_id, mark_code, reasons[], check}` — the steps worth one more look. `reliability`: `{level: "ok"|"low", reasons[]}`.
 
 ## Results
 
@@ -53,7 +55,11 @@ Errors: 400 bad cover values; 404 no such paper; 429 `{"code":"quota_exceeded", 
 | `GET /results/<result_id>` | — | the stored result |
 | `GET /results/<result_id>/pdf?token=...` | — | the marked PDF (this is `download_url`; no header needed) |
 
-Result: `{result_id, paper, total, max_total, grade, grade_boundaries, complete, units[], flagged[], download_url, expires_at}`.
+Result: `{result_id, paper, total, max_total, grade, grade_range, grade_boundaries, unsupported[], complete, units[], flagged[], review_items[], reliability, download_url, expires_at}`.
+
+- `unsupported[]`: `{label, marks}` — parts with no structured mark scheme; not marked, not in `total`. `max_total` is the whole paper; the marked part is `max_total` minus their marks.
+- `grade_range`: `[low, high]` when the unsupported marks could change the grade (then `grade` is null); otherwise `grade` is set and `grade_range` is null.
+- `review_items[]`: `{label, page, reasons[], notes[], final_answer, scheme_conflict}` — what to check before passing the PDF on; `notes` are ready-to-say sentences in the result's language. Say them in the chat; they are never printed on the PDF.
 `units[]`: `{unit_id, label, question_number, status: scored|unsupported|not_attempted, awarded, max_marks, flags[], steps[], comment, page, y}`.
 `flags`: `low_confidence`, `visual`, `missing_evidence`, `dependency_conflict`, `dependency_uncertain`, `numeric_unchecked`, `level_judgement`, `awarded_clamped`, `capped`, `unmarked`.
 The result also carries `recheck[]` and `reliability` as in the dry run.
@@ -61,4 +67,4 @@ The result also carries `recheck[]` and `reliability` as in the dry run.
 
 Errors: 413 scan over 50 MB; 422 evidence does not match the checklist (the message names the field); 404 result expired (results are kept 7 days).
 
-Notes on steps: `depends_on` lists prerequisite step ids; when it names steps from several alternative routes, only the prerequisites on the route the student followed count. `visual: true` marks a step judged on a drawing.
+Notes on steps: `depends_on` lists prerequisite step ids; when it names steps from several alternative routes, only the prerequisites on the route the candidate followed count. `visual: true` marks a step judged on a drawing.

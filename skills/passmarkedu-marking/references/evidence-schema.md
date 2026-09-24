@@ -42,19 +42,19 @@ Field rules:
 | `attempted` | `false` for blank parts; then omit `steps`. |
 | `page` | 1-based page of the uploaded PDF where the answer starts (count every page). |
 | `y` | 0–1, how far down that page the answer starts. |
-| `transcript` | Your pass-1 transcription of the unit, ≤4000 characters. Every value in `final_answer` must appear in it, or the unit is flagged for the teacher. |
-| `final_answer` | The student's final answer exactly as written; `""` if none. Shown for every unit. |
-| `comment` | One sentence: the overall verdict, in words a student understands. |
+| `transcript` | Your pass-1 transcription of the unit, ≤4000 characters. Every value in `final_answer` must appear in it, or the unit is flagged for the user. |
+| `final_answer` | The candidate's final answer exactly as written; `""` if none. Shown for every unit. |
+| `comment` | One sentence: the overall verdict, in words a candidate understands. |
 | `headline` | Units that lost marks: the main reason in ≤20 Chinese characters; printed beside the score on the answer page. |
-| `mistakes` | Units that lost marks: 1–4 `{"wrote", "why", "should"}`, one per actual error in the student's work (not per lost mark). |
+| `mistakes` | Units that lost marks: 1–4 `{"wrote", "why", "should"}`, one per actual error in the candidate's work (not per lost mark). |
 | `solution` | Units that lost marks or were not attempted: 2–6 key lines of a correct method, ending with the answer. |
-| `scheme_conflict` | Only when you think PassMarkedu's scoring contradicts the official mark scheme; teacher-only. Step ids or server wording in any other field → 422. |
-| `steps[].step_id` | From the checklist. Give every step of the unit; for alternative routes, the steps of the route(s) the student used (other routes may be left out). Missing steps on the chosen route count as not earned and are flagged. |
+| `scheme_conflict` | Only when you think PassMarkedu's scoring contradicts the official mark scheme; user-only. Step ids or server wording in any other field → 422. |
+| `steps[].step_id` | From the checklist. Give every step of the unit; for alternative routes, the steps of the route(s) the candidate used (other routes may be left out). Missing steps on the chosen route count as not earned and are flagged. |
 | `steps[].present` | `true` / `false` (JSON booleans). |
 | `steps[].awarded` | Integer: `point` steps with `step_marks` > 1, and `level` steps (marks within the level's band). |
-| `steps[].value` | `numeric` steps: the student's final answer copied exactly as written (text). PassMarkedu compares it. |
-| `steps[].matched` | `pick_n` steps: list of 0-based indices into `pick.options` that the student states. |
+| `steps[].value` | `numeric` steps: the candidate's final answer copied exactly as written (text). PassMarkedu compares it. |
+| `steps[].matched` | `pick_n` steps: list of 0-based indices into `pick.options` that the candidate states. |
 | `steps[].level` | `level` steps: the level reached (0 = none). |
 | `steps[].confidence` | `high` / `medium` / `low`. |
-| `steps[].evidence` | Short quote of the student's work copied from `transcript`, ≤1000 characters. |
-| `steps[].note` | Special cases ("SC"), `level` reasons and teacher corrections only. |
+| `steps[].evidence` | Short quote of the candidate's work copied from `transcript`, ≤1000 characters. |
+| `steps[].note` | Special cases ("SC"), `level` reasons and user corrections only. |
