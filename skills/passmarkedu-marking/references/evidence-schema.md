@@ -42,7 +42,7 @@ Field rules:
 | `attempted` | `false` for blank parts; then omit `steps`. |
 | `page` | 1-based page of the uploaded PDF where the answer starts (count every page). |
 | `y` | 0–1, how far down that page the answer starts. |
-| `transcript` | Your pass-1 transcription of the unit, ≤4000 characters. Awarded `evidence` and `final_answer` must appear in it, or the unit is flagged for the teacher. |
+| `transcript` | Your pass-1 transcription of the unit, ≤4000 characters. Every value in `final_answer` must appear in it, or the unit is flagged for the teacher. |
 | `final_answer` | The student's final answer exactly as written; `""` if none. Shown for every unit. |
 | `comment` | One sentence: the overall verdict, in words a student understands. |
 | `headline` | Units that lost marks: the main reason in ≤20 Chinese characters; printed beside the score on the answer page. |

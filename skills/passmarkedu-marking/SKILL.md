@@ -149,7 +149,7 @@ For each scoring unit, go through its `steps` in order. Each step has a `type`; 
 
 For every step also send:
 - `confidence`: `high`, `medium` or `low` (`low` whenever the handwriting is unclear or you are unsure).
-- `evidence`: the student's exact words/numbers for this step, copied character for character from your transcription (short). Never the mark scheme's words, and never the correct answer when the student wrote something else — PassMarkedu checks awarded evidence against your transcription and flags anything it cannot find there.
+- `evidence`: the student's exact words/numbers for this step, copied character for character from your transcription (short). Never the mark scheme's words, and never the correct answer when the student wrote something else.
 - `note`: only for special cases ("SC"), `level` steps (the reason) and teacher corrections.
 - `awarded`: only for `point` steps whose `step_marks` is more than 1 (M2, K2 …) and for `level` steps.
 
@@ -164,7 +164,7 @@ Rules:
 The marked PDF shows your explanation to the student and the teacher. Write it in the teacher's language, in words a student understands, about **the student's work** — not about mark-scheme steps. Per scoring unit send:
 
 - `transcript`: your pass-1 transcription of this unit, as written (line breaks allowed, ≤4000 characters).
-- `final_answer`: the student's final answer copied exactly as written (e.g. `"17ln3 − 4/3"`), or `""` if there is none. It is printed for every unit so the teacher can compare it with the handwriting.
+- `final_answer`: the student's final answer copied exactly as written (e.g. `"17ln3 − 4/3"`), or `""` if there is none. PassMarkedu checks that every value in it appears in your `transcript`; a value it cannot find there is flagged for the teacher.
 - `comment`: one sentence: the overall verdict (e.g. "分部积分方向对，但求导 ln(3x) 出错，原函数和答案都错了。").
 - `headline` (units that lost marks): the main reason, ≤20 Chinese characters (or ~10 English words), e.g. "没有积分到 tanθ，也没代入上下限". Printed in red beside the score on the answer page.
 - `mistakes` (units that lost marks): 1–4 items `{"wrote", "why", "should"}`, one per **actual error in the student's work**, in the order it happened — not one per lost mark. If one early error costs five marks, that is one item. `wrote`: the student's words from the transcript; `why`: what is wrong, plainly (no "condone", "o.e.", "dM1"); `should`: the correct line. Formulas readable, not LaTeX.
@@ -175,7 +175,7 @@ Units at full marks need only `transcript`, `final_answer` and `comment`. Unatte
 
 ### Look again at the doubtful steps (once)
 
-When every question is judged, send the evidence JSON to `POST /score` (plain JSON body, same content you will submit; no PDF is made, nothing is charged again). The response has `recheck`: a short list of steps (low confidence, drawings, unclear dependencies, numbers PassMarkedu could not compare, missing judgements, parts left unmarked, and units whose awarded evidence or final answer is not in your transcript — reason `evidence_not_in_transcript`) with the reason and the step's question. For `evidence_not_in_transcript`, read the student's final lines again on the page image and copy what is actually written; do not change the transcript to match the mark scheme.
+When every question is judged, send the evidence JSON to `POST /score` (plain JSON body, same content you will submit; no PDF is made, nothing is charged again). The response has `recheck`: a short list of steps (low confidence, drawings, unclear dependencies, numbers PassMarkedu could not compare, missing judgements, parts left unmarked, and units whose final answer has a value that is not in your transcript — reason `evidence_not_in_transcript`) with the reason and the step's question. For `evidence_not_in_transcript`, read the student's final lines again on the page image and copy what is actually written; do not change the transcript to match the mark scheme.
 
 Look at **only those steps** again on the page images, zooming in, and correct your evidence where you were wrong. For reason `correctness_required` (an accuracy mark whose scheme demands correct work, cao or cso): compare the student's expression or value **symbol by symbol** with the one in the step description — a right-looking form with a wrong term, power, sign or function (e.g. `3cos²t` where the scheme has `3sin²t cos t`) is not earned. Do this once; do not loop. Then submit (section 5). Tell the teacher in one line: "正在复核 N 个不确定的得分点……".
 
