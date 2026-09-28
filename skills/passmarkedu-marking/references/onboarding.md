@@ -23,7 +23,7 @@ Read this after successfully installing the skill, or when the user asks to star
 
 **支持范围**
 - **Edexcel IAL**：数学、进阶数学、物理、化学、经济、会计、生物。
-- **CAIE AS & A Level**：数学、进阶数学、物理、化学、经济、计算机科学。
+- **CAIE AS & A Level**：数学、进阶数学、物理、化学、经济、会计、计算机科学。
 
 仅支持已收录并开放批改的官方真题及配套评分标准，具体年份与覆盖范围见[常见问题](<base>/marking-kit#faq)。
 

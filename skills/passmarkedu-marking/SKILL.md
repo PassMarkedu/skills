@@ -19,7 +19,7 @@ Talk to the user in the language they use (default Chinese). Keep messages short
 
 After a successful installation, or when the user asks to connect/start using this skill, read `references/onboarding.md` and follow its welcome → account authorisation → upload flow. Do not require a script before connecting the account. On an update, preserve saved authorisation and do not repeat the first-install welcome. When the first request already includes a script, give the short service introduction, connect if needed, and continue marking that script.
 
-Supported subjects: **Edexcel IAL** maths, further maths, physics, chemistry, economics, accounting and biology; **CAIE AS & A Level** maths, further maths, physics, chemistry, economics and computer science. Only mark official past-paper questions for which the service supplies supported scoring units. Dates and current coverage belong at `<base>/marking-kit#faq`; do not promise complete coverage of all papers within a year range. For another subject/board, explain the supported scope before requesting a checklist.
+Supported subjects: **Edexcel IAL** maths, further maths, physics, chemistry, economics, accounting and biology; **CAIE AS & A Level** maths, further maths, physics, chemistry, economics, accounting and computer science. Only mark official past-paper questions for which the service supplies supported scoring units. Dates and current coverage belong at `<base>/marking-kit#faq`; do not promise complete coverage of all papers within a year range. For another subject/board, explain the supported scope before requesting a checklist.
 
 ## 0. Setup
 

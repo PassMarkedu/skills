@@ -78,7 +78,3 @@ The result also carries `recheck[]` and `reliability` as in the dry run.
 Errors: 413 scan over 50 MB; 422 evidence does not match the checklist (the message names the field); 404 result expired (results are kept 7 days).
 
 Notes on steps: `depends_on` lists prerequisite step ids; when it names steps from several alternative routes, only the prerequisites on the route the candidate followed count. `visual: true` marks a step judged on a drawing.
-
-## Public support coverage
-
-`GET /coverage` requires no login and does not consume a credit. It returns `boards[].board` and `boards[].subjects[]` with `subject`, `first_year`, `last_year`, and `paper_count`. Counts require a served canonical paper with active QP/MS PDFs and at least one supported scoring unit. Empty subjects have null years and zero papers. A year span does not mean every sitting or part is supported. The website FAQ displays this live summary.
