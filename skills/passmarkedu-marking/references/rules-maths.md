@@ -16,6 +16,8 @@
 - **implied / may be implied / SOI (seen or implied)**: the mark is earned if a later correct result could only have come from it, even if not written. Example (CAIE 9709/13 June 2024 Q1): writing −150x² and 810x² implies the terms 30x and 405x², so both B1 marks are earned. When several steps are run together, earlier marks are implied.
 - **WWW** (without wrong working): the result must not come from incorrect working.
 
+An implied method still needs the scheme's stated evidence. For example, a fraction does not establish a conditional-probability method if neither the correct events nor the numerator required to imply that method are shown. Do not infer a missing method from a coincidentally suitable number when the written working contradicts it.
+
 - **B1ft**, **A1ft**: as ft above, on the candidate's own earlier value.
 
 ## Proofs
@@ -23,3 +25,16 @@
 - Judge a deduction exactly as the step's `check` (or description) states it. Some schemes accept a bare "p² = 4q − 2, so p² is even, so p is even" (WMA14 June 2025 Q10: "it is not necessary to factorise 4q − 2"); do not demand more than the scheme does.
 - Rearranging must reach the form the step names (e.g. `p² = 4q − 2`, p² the subject); an equivalent line in another form (`p² − 4q = −2`) does not earn that M unless the step allows it.
 - A final mark that needs "all previous marks awarded" is enforced by PassMarkedu: judge only whether the conclusion itself is complete (contradiction stated and the original statement concluded).
+
+## Examiner conventions (Examiner Reports 2024–2026; quotes and pages in the bench's `records/examiner-reports/`)
+
+- **"Show that" / given answers:** every step to the printed result must be shown; a jump from substitution straight to the given answer loses the final mark (Edexcel), and verifying by substitution is not a proof (CAIE). Working backwards from a value given in a later part, or circular reasoning, earns nothing. A given answer reached through wrong working does not earn full marks.
+- **Calculator warning** ("solutions relying on calculator technology are not acceptable", "show all necessary working"): a bare calculator answer earns 0 or only the first M. Quadratics need factorising, the formula with substitution, or completing the square written out; the factorisation must be convincing ((x−14)(x+2)=0 alone is not).
+- **"Writing or using" a method:** a mark for "writing or using X" is earned when the candidate works with X's parts — e.g. computes the terms of P(S=3)+P(S=4)+P(S=5) one by one — even if the final addition or combination is missing. The accuracy mark still needs the finished result.
+- **Specified method ("Hence", "use …"):** another method earns nothing, but correct use of the candidate's own wrong earlier answer is credited (CAIE; Edexcel only where the scheme marks ft).
+- **Multiple answers:** a more accurate correct value written before a wrong rounding keeps the mark (isw, Edexcel). Two answers with no choice made, or a root that should have been rejected, is M1 A0; a repeated solution loses the final mark (CAIE 9231).
+- **Penalise once:** the same slip (missing units, radians/degrees, over-accuracy) is penalised once per question (Edexcel).
+- **Accuracy:** CAIE non-exact answers 3 s.f., angles in degrees 1 d.p., intermediate values to at least 4 s.f.; an exact answer given as a decimal loses the final A. Edexcel mechanics uses g = 9.8 and answers to 2 or 3 s.f. (a multiple of g is fine; more figures or a fraction of 9.8 loses the mark).
+- **Statistics:** hypotheses in terms of the parameter (λ, μ, p) — hypotheses in words are not accepted (Edexcel); conclusions in context, non-assertive ("there is evidence …", never "proves") and not contradicting the test result; table z-values to 4 d.p.
+- **Proof:** induction needs the basis with both sides evaluated, the assumption "true for some positive integer k", and the conclusion "true for all positive integers n"; contradiction starts by stating the assumption; every proof ends with a concluding statement. Do not work on both sides of an identity at once; mixing variables inside a proof loses the A mark (CAIE 9231).
+- **Mechanics (9231, M1):** an equation with inconsistent dimensions or missing/extra terms earns nothing; suvat used where acceleration is not constant earns 0.

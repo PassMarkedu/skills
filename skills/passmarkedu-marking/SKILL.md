@@ -1,224 +1,102 @@
 ---
 name: passmarkedu-marking
-description: Mark a candidate's scanned CAIE (Cambridge International AS & A Level) or Pearson Edexcel IAL exam script against the official mark scheme, point by point, and return a marked PDF with per-part scores, comments, the official grade and the mark-scheme pages. Use when a user uploads a scanned exam paper (PDF or photos) and asks to mark / grade / 判分 / 批改 / 阅卷 it, or asks to change a mark on a paper this skill already marked.
+description: Mark a candidate's scanned CAIE (Cambridge International AS & A Level) or Pearson Edexcel IAL exam script against the official mark scheme, point by point, and return an annotated-script PDF and a separate marking-report PDF with explanations and official mark-scheme pages. Use after installing this skill to welcome the user and connect their account, when a user uploads a scanned exam paper (PDF or photos) and asks to mark / grade / 判分 / 批改 / 阅卷 it, or asks to change a mark on a paper this skill already marked.
 ---
 
-# PassMarkedu 阅卷 Skill
+# PassMarked A-level 阅卷 Skill
 
-You mark a candidate's handwritten exam script against the **official** mark scheme held by PassMarkedu, then PassMarkedu adds the marks up, grades the paper and builds the marked PDF. You never add marks up or decide the grade yourself — the server does that from your per-point evidence. This keeps results consistent even for weaker models.
+You mark a candidate's handwritten exam script against the **official** mark scheme held by PassMarked A-level, then PassMarked A-level adds the marks up, grades the paper and builds two PDFs: the annotated script and the marking report. You never add marks up or decide the grade yourself — the server does that from your per-point evidence. The same evidence and scoring data produce the same server-calculated marks; different models can still read handwriting or judge a point differently. Never promise identical marks across models.
 
 Talk to the user in the language they use (default Chinese). Keep messages short.
 
 **Who is who.** The user may be the person who wrote the script, or someone marking it for them — you cannot tell, so never guess. In the chat and in every text you send (comments, mistakes, solutions), never call anyone 老师 / 学生 / teacher / student. Address the user as 你; refer to the script and its writer as 答卷 / 作答 / 卷面 (e.g. "答卷第 4 页", "卷面上写的是 …").
 
-**The marked PDF is handed on as it is.** Everything printed on it is read by whoever wrote the script, so it holds only the marking: scores, what went wrong, the correct method, the official mark scheme. Anything about checking the marking — doubtful points, warnings about reliability, disagreements with the scoring — belongs in the chat, never in the PDF.
+**Both PDFs are handed on as they are.** Everything printed in them is read by whoever wrote the script, so it holds only the marking: scores, what went wrong, the correct method, the official mark scheme. Anything about checking the marking — doubtful points, warnings about reliability, disagreements with the scoring — belongs in the chat, never in either PDF.
 
 **Honesty rule.** `evidence` must quote what the candidate actually wrote. Never copy the mark scheme's expected answer into `evidence`, and never mark a step present because the answer "should" be there. If you cannot read it, say so with `confidence: "low"`. A made-up judgement is worse than an unmarked part.
 
+## Installation and first use
+
+After a successful installation, or when the user asks to connect/start using this skill, read `references/onboarding.md` and follow its welcome → account authorisation → upload flow. Do not require a script before connecting the account. On an update, preserve saved authorisation and do not repeat the first-install welcome. When the first request already includes a script, give the short service introduction, connect if needed, and continue marking that script.
+
+Supported subjects: **Edexcel IAL** maths, further maths, physics, chemistry, economics, accounting and biology; **CAIE AS & A Level** maths, further maths, physics, chemistry, economics and computer science. Only mark official past-paper questions for which the service supplies supported scoring units. Dates and current coverage belong at `<base>/marking-kit#faq`; do not promise complete coverage of all papers within a year range. For another subject/board, explain the supported scope before requesting a checklist.
+
 ## 0. Setup
 
-- API base: `PASSMARKEDU_BASE_URL` if set (older setups: `PASSMARK_BASE_URL`), otherwise `https://passmarkedu.com`. All calls below are relative to `<base>/api/v1/marking-kit`.
+- Before the welcome, update check, or any API call, run `python3 <skill-folder>/scripts/config.py resolve`. Use its `base`, `api_base`, `token_path`, and `token_exists` in this run. The installed skill's `origin.txt` takes priority; if absent, `PASSMARKEDU_BASE_URL` (older setups: `PASSMARK_BASE_URL`) applies, then `https://passmarkedu.com`. A malformed configured origin is an error to fix, never a reason to silently use production. All calls below are relative to `api_base`.
 - Make HTTP calls with whatever you have (`curl`, Python `urllib`/`requests`, a fetch tool). If you cannot reach the internet at all, tell the user this AI app blocks network access and stop.
-- The token lives in `~/.passmarkedu/marking-kit-token` (create the folder if needed). If the home folder is not writable in this app's sandbox, use `.passmarkedu-marking-token` in the current working folder instead, and check both places when looking for a saved token.
-- Older versions of this skill saved the token in `~/.passmark/marking-kit-token` or `.passmark-marking-token`. If you find one there and none in the new places, move it to the new place and use it; the user does not need to log in again.
+- Use only the resolved `token_path` to read or write this origin's token. The production origin keeps `~/.passmarkedu/marking-kit-token` and its old fallback and legacy paths. Other origins use a separate SHA-256-named token file; never copy a token between origins. If the home folder is not writable, the helper selects a current-folder path. Create the selected folder if needed, and write tokens with owner-only read/write permissions when supported.
 - A folder named `passmark-marking` next to this skill's folder is the old version of this skill. If you see one, tell the user once: "旧版的 passmark-marking 文件夹可以删除，新版叫 passmarkedu-marking。" Never print the token, never paste it into the chat, never ask the user for SMS codes or passwords.
 
 ## 0.5 Check for an update (once per conversation, silently)
 
 `GET /skill` (no login needed) returns `{version, zip_url, npx_command}`. Compare `version` with the `VERSION` file next to this SKILL.md. If the server's is newer, tell the user once, in one line, then carry on with the current version:
-"PassMarkedu 阅卷 Skill 有新版本（<version>）。更新方法：把这句话发给我——『请从 <zip_url> 下载 PassMarkedu 阅卷 Skill，解压后覆盖安装到原来的 passmarkedu-marking 文件夹』；WorkBuddy 用户也可以在 SkillHub 里更新。"
+"PassMarked A-level 阅卷 Skill 有新版本（<version>）。更新方法：把这句话发给我——『请从 <zip_url> 下载 PassMarked A-level 阅卷 Skill，解压后覆盖安装到原来的 passmarkedu-marking 文件夹』。"
 If the call fails, skip this step without mentioning it.
 
 ## 1. Log in
 
-**If a saved token exists, just use it — say nothing about logging in.** Only run this section when there is no saved token, or a call returns 401.
+**If `token_exists` is true, just use that origin's token — say nothing about logging in.** Only run this section when there is no saved token, or a call returns 401.
 
-Tell the user first, in one short message, which case it is:
+When not already giving the first-install welcome, tell the user in one short message which case it is:
 - no saved token (first use in this app): "第一次使用需要连接你的 PassMarkedu 账号。还没有账号的话，打开下面的链接后先注册（手机号即可），再点「授权」。"
 - a call returned 401 (the saved authorisation expired after 90 days or was revoked): "之前的授权已过期（有效期 90 天），需要重新授权一次，之前的批改记录不受影响。"
+
+For a first installation, include the welcome from `references/onboarding.md` in the same message as the real authorisation link. Do not send a second introduction.
 
 Then:
 1. `POST /device-code` (no body). Response: `user_code`, `verification_uri_complete`, `device_code`, `interval`, `expires_in`.
 2. Give the user the clickable link `verification_uri_complete` and the code: "打开链接 → 登录（或注册）PassMarkedu → 核对授权码 <user_code> → 点「授权」。授权后回到这里，我会自动继续。"
 3. Poll `POST /token` with JSON `{"device_code": "..."}` every `interval` seconds (at least 5 s) until it returns 200:
    - 400 `{"error":"authorization_pending"}` → keep waiting; `slow_down` → wait 5 s longer; `access_denied` → tell the user authorisation was declined and stop; `expired_token` (the code is valid for 10 minutes) → tell the user the link timed out and start again from step 1.
-4. Save `access_token` to the token file, tell the user "已连接 PassMarkedu 账号", and continue with the task they asked for. Send the token as `Authorization: Bearer <token>` on every later call.
+4. Save `access_token` to the resolved `token_path` with owner-only read/write permissions when supported, tell the user "已连接 PassMarkedu 账号", and continue with the task they asked for. Send the token as `Authorization: Bearer <token>` on every later call.
 
 If a call returns 401 again right after a fresh login, stop and tell the user to contact PassMarkedu support — do not loop.
 
-## 2. Decide the mode
+## 2. Prepare once
 
-- **Whole paper**: the script starts with an official cover page (Cambridge / Pearson answer booklet with syllabus or unit code and series), and the questions follow in that paper's order. → section 2A, then 3A.
-- **Mixed questions**: no official cover, or the questions come from different papers (a worksheet, a revision pack, questions cut from several past papers). → section 2B, then 3B.
+Read [workflow.md](references/workflow.md) once for the bundled commands. Use `scripts/workflow.py` for material downloads, rendering, crops, validation, scoring and delivery. Execute it directly; its compact results are the working interface.
 
-If unsure, look at 2–3 question pages: a real answer booklet prints "Question 1", "Question 2"… in order under one paper reference.
+Read the uploaded cover to identify the board, code, printed series and component/variant. Copy the paper reference exactly as printed: "WMA13/01A" is code `WMA13` with component `01A` — never drop the trailing letter; it selects a different paper. Save `paper.json`, then run `prepare` in a new work directory next to the answer script (`<script folder>/passmarkedu-runs/<script name>-<YYYYMMDD-HHMM>`), never in the current directory when that is a code repository or the skill folder. For mixed questions use [mixed-questions.md](references/mixed-questions.md) first. For photos, combine them in supplied order before preparation. Ask only for genuinely unreadable identity fields.
 
-## 2A. Whole paper — read the cover
+**Check the match before judging:** the checklist's number of questions and marks must match the script (cover total, printed [n] marks, question wording). If they do not, the identity is wrong — fix `paper.json` and prepare again in a new work directory; never submit against a mismatched paper.
 
-Look at the first page(s) of the script and read:
+Preparation returns the question index, original-page paths, official MS images and evidence templates with real IDs. Announce unsupported parts; they are excluded from marking rather than scored zero. On quota exhaustion give `<base>/pricing`. Keep the original page numbers, including covers, repeats and blank pages. If there is no renderer, use the Harness's actual PDF/image viewer.
 
-- **board**: `caie` (Cambridge International) or `edexcel` (Pearson Edexcel International Advanced Level).
-- **code**: CAIE syllabus code (e.g. `9709`), or the Edexcel unit code (e.g. `WST01`, `WMA11`, `WPH11`).
-- **component** (CAIE only): the two-digit paper/variant after the slash, e.g. `9709/13` → `13`.
-- **variant** (Edexcel only, optional): a letter printed after the paper reference such as `WST01/01A` → `A`. Omit if there is none.
-- **series**: month and year of the sitting, taken from the cover — never guessed; a wrong series gives a wrong grade. CAIE prints it directly (`May/June 2024`, `October/November 2023`, `February/March 2025`). Edexcel prints the exam date (e.g. "Friday 17 October 2025") — use its month and year: `October 2025`.
+The work directory records the scoring-material revision. If the service reports that it changed, prepare a new run against the current material and revisit affected judgements; never silently combine old evidence with new rules.
 
-If any of these is unreadable, ask the user before continuing.
+## 3. Mark a batch, then save
 
-## 2B. Mixed questions — find where each question comes from
+Read [judging.md](references/judging.md), the common marking rules and the relevant subject rules once. Process **two complete questions per batch** by default; a final single question is fine.
 
-Split the script into questions (each printed question with the candidate's answer under it). At most 20 questions per submission; if there are more, tell the user to split the script into several PDFs.
+1. Start at the next unread original page, opening **up to four images in the same tool round** when supported. Once two complete questions and their continuation pages are located, mark and save that batch before advancing to later questions. Build the page mapping as you go; do not first read the whole paper merely to build a map.
+2. Get the batch packet with `batch`. Use its structured MS conditions, point IDs and service rules alongside the answer images for routine judging. Open the relevant official MS image only when the [MS checks](references/judging.md#when-to-consult-the-official-ms-image) apply. Reuse images already viewed; record a confirmed mismatch in `scheme_conflict`.
+3. Read the effective answer, the working needed for each mark, and relevant errors or corrections. Preserve those lines in `transcript`; a faithful record of unrelated scratch is unnecessary. Judge every supported point, using its actual evidence. Save the batch's question evidence files together in one file-writing round. Report explanations come after scoring.
+4. Collect specific unreadable signs, powers, deletions or graph features across the batch. Call `crop` once with their original-page normalized boxes, then open the returned crops together. After **one correctly located enlargement per doubt**, retain unresolved uncertainty and continue. Correct a misplaced crop's coordinates rather than increasing DPI. Extra enlargements need genuinely new source information, such as a replacement scan.
+5. Give a short batch progress update, then continue. Full packets and finished evidence stay on disk; reading them back merely to verify a successful file write adds no evidence.
 
-For every question, in this order, stop at the first that works:
+For an unreadable mark-bearing item, quote the readable part, record the ambiguity with low confidence and withhold the unresolved point. A blank answer is `attempted: false`; unreadable work is not blank. Never invent a symbol or copy the MS into the transcript. Saving a file does not clear context; batch tool calls and concise outputs reduce repeated history. The default path runs in the current conversation without subagents.
 
-1. **The PDF already has text** (try extracting text from the page; typed or digital scripts): use that text.
-2. **A printed reference** on the page (e.g. "9709/13/M/J/24" in the footer, "WST01/01", a question number): build a locator like `9709/13 June 2024 Q3` or `WST01 June 2014 Q1`.
-3. **Read the printed question text** off the page image yourself (the question, not the candidate's answer; the first 2–4 sentences are enough, keep numbers and symbols).
+## 4. Score and resolve the actual review list
 
-Send all questions in one call: `POST /identify` with `{"items": [{"key": "Q1", "locator": "...", "text": "..."}, ...]}` (give whichever of `locator`/`text` you have). Each item returns up to 3 `candidates` (`question_id`, `unit_code`, `year`, `session`, `paper_number`, `question_number`, `preview`).
+Run `check` after all supported units have their judgements. It validates real IDs, typed answers and coverage, calls the service and returns grouped review items plus explanation tasks based on the **actual awarded marks**.
 
-- Pick the candidate whose `preview` matches the printed question. The same question is sometimes reused in two papers (e.g. an old paper and a later variant); pick the one matching any printed reference, otherwise the most recent, and mention the alternative to the user.
-- **No candidate** for a question → crop that question's area into a JPEG (under 8 MB) and call `POST /identify-photo` with `{"image_base64": "...", "mime_type": "image/jpeg"}`. This uses PassMarkedu's image recognition and does not use the user's photo-search allowance. Use it only for questions the text step could not match.
-- Still nothing → ask the user where that question comes from (paper and question number), or leave it out and say so.
+The printed `summary_path` points to `check-summary.json`, which preserves scores, review items and full explanation tasks. Read this file if output was truncated or more detail is needed. An unchanged judgement reuses the saved check; there is no need to call the API or inspect helper source to recover report hashes.
 
-Keep the list of chosen `question_id`s **in the order the questions appear in the script**.
+For a validation error, fix the named file/field only. For a review item, inspect its named lines/features against the already-viewed images; batch any necessary new views or crops. A doubt already enlarged in this run does not need the same enlargement again. Preserve a remaining low-confidence flag and communicate it at delivery. The `--reviewed` acknowledgement records an actual review, not certainty.
 
-## 3A. Fetch the checklist (whole paper)
+After judgement changes, run `check` once to obtain the updated score and explanation tasks. Newly identified issues receive targeted review; correct evidence is not rewritten to eliminate warnings. Use [evidence-schema.md](references/evidence-schema.md) for a field error and [api.md](references/api.md) for an API failure. Tool errors should be reported with their operation and safe diagnostic; application source-code debugging is outside a marking run.
 
-`GET /papers?board=..&code=..&component=..&variant=..&series=..` (URL-encode the series).
+## 5. Explain the score, then deliver
 
-- 200 → the checklist (see `references/api.md`). The first fetch of a paper uses one of the account's paper credits; fetching the same paper again is free.
-- 404 → tell the user PassMarkedu has no such paper and ask them to double-check the cover values.
-- 429 with `"code": "quota_exceeded"` → say: "免费额度已用完（免费账号可批 1 份试卷）。订阅 PassMarkedu 后可不限次使用：<base>/pricing" and stop.
-- 404 whose `detail` starts with `paper_not_supported` → no question of this paper can be auto-marked yet. Say: "这份试卷暂时还不支持自动批改（还没有结构化评分标准），这次没有扣次数。" and stop. Nothing was charged.
-- `paper.unsupported` lists the parts that have no structured mark scheme yet (label and marks). If it is not empty, say so in your **first** progress line, before marking anything, e.g. "已识别 WMA14 January 2025（共 9 题）。其中第 6 题（4 分）暂不支持自动批改，不计入总分；其余照常批改。" Do not transcribe or judge those parts — leave them out of the evidence.
+Complete `reports/<number>.json` from `explanation_tasks`, copying each task's `judgement_sha256`. Write the reports for the paper in one batch. Follow [judging.md](references/judging.md#explain-after-scoring): one short comment for marked units, and explanations/solutions for actual losses or blanks. A low-confidence unconfirmed point must not become a fabricated definite mistake. Keep uncertainty and scheme disputes in the chat, outside the PDFs.
 
-## 3B. Fetch the checklist (mixed questions)
+Run `submit`, adding `--reviewed` after the applicable review. It checks report completeness and freshness, merges files, submits and downloads both PDFs plus the review note (`review_note.pdf`) when the service provides one. Changing report prose alone does not require another judgement pass. If download fails after a result was saved, retry the same command to reuse that result. The service supplies the completed PDFs; routine rendering and re-inspection of their pages is unnecessary.
 
-`POST /question-sets` with `{"question_ids": [...]}`. The response has the same `questions[].scoring_units` as 3A, numbered 1..N in your order, each question with a `source` ("WST01 June 2014 Q1"). `grade_boundaries` is a *folded indicative* grade line built from each source paper's official thresholds (`"folded": true`), or null. The same 429 / 404 handling as 3A applies; 400 means the set is too large or an id is wrong, and a 400 whose `detail` starts with `paper_not_supported` means none of the questions can be auto-marked yet (nothing was charged; say so and stop). Announce `question_set.unsupported` the same way as in 3A. There is no single QP/MS PDF — use each question's `ms_image_url`.
+Reply using the actual server result: total/marked maximum, whole-paper grade or its absence (no grade for mixed questions), per-question scores, outstanding review items with original page numbers, and the labelled files/links with expiry: **批改答卷 PDF** and **阅卷结果 PDF** (these two can be passed on as they are), plus **复核说明 PDF** when present — say it is for the person running the marking and should not be forwarded with the script; it lists disputed mark-scheme rules, unreadable figures, levels judgements and why a grade is withheld. If `over_answered` is true, say that more optional questions were answered than the paper allows, no grade is given, and which questions count must be confirmed under the board's rule. State briefly that this is AI marking and identify what still needs checking. Keep the run directory and result ID for corrections.
 
-## 3C. Using the checklist (both modes)
+## 6. Corrections
 
-Use `scoring_units` (not anything else) as the list of parts to mark; skip the ones with `"supported": false`. Open a question's `ms_image_url` (official mark-scheme screenshot) when a step description is unclear; the steps are the source of truth for marks. Some answers need data that is only in the question paper (a table, a given diagram or box plot): open `qp_pdf_url` for that question instead of guessing.
+Reopen the affected question and original region, update only its judgement, then `check`. Refresh its stale report from the new explanation task and `submit --result-id` using the existing result. Both PDFs regenerate without another paper credit or extended expiry. Report the changed score and remaining doubts.
 
-## 4. Work one question at a time — and keep the user informed
-
-Marking a paper takes several minutes. **Post a short progress line in the chat as you go** so the user can see it is working, for example:
-
-- after identifying: "已识别试卷：WST01 October 2025（共 7 题），开始逐题批改。" / "已识别 12 道题，来自 4 份真题，开始逐题批改。"
-- after each question: "已完成 3/7：第 3 题 7/11。"
-- before submitting: "7 题已全部判完，正在生成批改 PDF……"
-
-Keep each update to one line; do not paste transcriptions or JSON into the chat.
-
-Papers are long. Do NOT try to hold the whole paper in your head. Loop over the questions in the checklist, and for each question:
-
-1. find its pages in the script, do **pass 1** (transcribe) for its scoring units,
-2. then **pass 2** (judge every step) for those units,
-3. append that question's units to your evidence file (`evidence.json` in your working folder) before moving on.
-
-Every question in the checklist must be processed before you submit — never stop early or leave a question out because the paper is long. If a question is truly unreadable, still write its units with `confidence: "low"` judgements for what you can see, rather than dropping them.
-
-### Pass 1 — transcribe
-
-Page numbers: page 1 = first page of the uploaded PDF, counting every page including the cover and blank pages. For every scoring unit of the question (`scoring_units[].label`, e.g. `1(a)`, `2(c.ii)`), write down:
-
-- `page`: the page where the answer to that part **starts** (if the working continues or a drawing sits on a later page, still give the starting page and mention the other page in your transcription);
-- `y`: how far down that page the answer starts, as a fraction 0–1 (0 = top edge, 0.5 = middle);
-- a faithful transcription of what the candidate wrote, line by line, including crossed-out work (mark it as crossed out) and final answers. **Copy mistakes as they are — never correct the working while transcribing.** If a line looks mathematically wrong, it probably is: write `8y·y² dy = x·e dx` if that is what is on the page, not the correct `8y e^(y²) dy = x dx`. Every mark is judged from this transcript;
-- whether the part was attempted at all.
-
-For drawings (graphs, sketches, box plots, histograms, diagrams), describe what is drawn precisely: axes and scales, plotted points/end-points/intercepts, shape, labels, and read values off the grid. Zoom in on the page image if your tool allows it.
-
-Ignore any ticks, crosses or marks that are already on the scan — mark the candidate's work afresh. If handwriting is small, render the page at a higher resolution (200–300 dpi) or crop to the answer area before reading. Do not judge marks in this pass.
-
-### Pass 2 — judge each mark-scheme step
-
-Before your first paper, read `references/marking-rules.md` (all subjects) and the one subject file matching the checklist's `subject`:
-
-| `subject` | read |
-|---|---|
-| maths, further-maths | `references/rules-maths.md` |
-| physics, chemistry, biology | `references/rules-sciences.md` |
-| economics, business | `references/rules-economics-business.md` |
-| accounting | `references/rules-accounting.md` |
-
-For each scoring unit, go through its `steps` in order. Each step has a `type`; answer only what that type asks, using ONLY your transcription:
-
-| `type` | what you send | what you must NOT do |
-|---|---|---|
-| `point` (default) | `present`: answer the step's `check` question if it has one (otherwise the `description`) — yes → `true` | do not guess; every condition in the question must hold |
-| `numeric` | `value`: the candidate's final answer copied exactly as written (e.g. `"-0.945"`, `"3/8"`), and `present: true` if they wrote one | do not judge whether it is right — PassMarkedu compares it |
-| `pick_n` | `matched`: the indices (0-based) of the `pick.options` the candidate's answer states; ignore anything on `pick.reject`; `present: true` if any matched | do not count marks yourself |
-| `level` | `level`: the level whose descriptor fits best (0 if none), `awarded`: marks within that level's band, and the reason in `note` | do not skip the reason |
-
-For every step also send:
-- `confidence`: `high`, `medium` or `low` (`low` whenever the handwriting is unclear or you are unsure).
-- `evidence`: the specific line(s) of your transcription that earn or fail **this** step, copied character for character, ≤150 characters. Never the whole transcript — the same long quote pasted into several steps is flagged as not judged one by one. Never the mark scheme's words, and never the correct answer when the candidate wrote something else.
-- `note`: only for special cases ("SC"), `level` steps (the reason) and user corrections.
-- `awarded`: only for `point` steps whose `step_marks` is more than 1 (M2, K2 …) and for `level` steps.
-
-Rules:
-- Judge each step on what is written; do not skip later steps because an earlier one failed — the server applies dependencies (`depends_on`) itself, including dependencies on earlier parts. If a dependent step's content is present but its prerequisite was not earned, still send `present: true`; the server decides.
-- Where a unit has several `alternative_group` routes ("Way 1", "Way 2"), judge the steps of the route(s) the candidate actually used; you may leave out the steps of routes they clearly did not use. The server picks the best route.
-- Special cases ("SC B1 if …", "SC M1M0A0"): when the candidate's work matches a special case, set `present`/`awarded` on the listed steps so that the total equals what the special case gives, and say "SC" in the `note`.
-- Steps with `"visual": true` are judged on a drawing. Judge them from your description in pass 1; they are always shown to the user for review.
-- Blank or unattempted parts: send `"attempted": false` and no steps.
-### Explain each unit (you write the explanation; PassMarkedu decides the marks)
-
-The marked PDF shows your explanation to the candidate and the user. Write it in the user's language, in words a candidate understands, about **the candidate's work** — not about mark-scheme steps. Per scoring unit send:
-
-- `transcript`: your pass-1 transcription of this unit, as written (line breaks allowed, ≤4000 characters).
-- `final_answer`: the candidate's final answer copied exactly as written (e.g. `"17ln3 − 4/3"`), or `""` if there is none. PassMarkedu checks that every value in it appears in your `transcript`; a value it cannot find there is flagged for the user.
-- `comment`: one sentence: the overall verdict (e.g. "分部积分方向对，但求导 ln(3x) 出错，原函数和答案都错了。").
-- `headline` (units that lost marks): the main reason, ≤20 Chinese characters (or ~10 English words), e.g. "没有积分到 tanθ，也没代入上下限". Printed in red beside the score on the answer page.
-- `mistakes` (units that lost marks): 1–4 items `{"wrote", "why", "should"}`, one per **actual error in the candidate's work**, in the order it happened — not one per lost mark. If one early error costs five marks, that is one item. `wrote`: the candidate's words from the transcript; `why`: what is wrong, plainly (no "condone", "o.e.", "dM1"); `should`: the correct line. Formulas readable, not LaTeX.
-- `solution` (units that lost marks, and unattempted units): 2–6 key lines of a correct method, ending with the correct answer.
-- `scheme_conflict` (rare): if you believe PassMarkedu's scoring of this unit contradicts the official mark scheme (for example a mark blocked by the wrong prerequisite), say so here in one or two sentences. Only the user sees it. **Never** put such disputes, step ids (`main.s3`), or words about PassMarkedu's server or configuration into the candidate-facing fields — those submissions are rejected with 422.
-
-Units at full marks need only `transcript`, `final_answer` and `comment`. Unattempted units: `"attempted": false`, optionally a `solution`.
-
-### Look again at the doubtful steps (once)
-
-When every question is judged, send the evidence JSON to `POST /score` (plain JSON body, same content you will submit; no PDF is made, nothing is charged again). The response has `recheck`: a short list of steps (low confidence, drawings, unclear dependencies, numbers PassMarkedu could not compare, missing judgements, parts left unmarked, units whose final answer has a value that is not in your transcript — reason `evidence_not_in_transcript` — and units where one long quote was pasted into several steps — reason `evidence_not_specific`) with the reason and the step's question. For `evidence_not_specific`, judge that unit's steps again one at a time, quoting the one line each step rests on. For `evidence_not_in_transcript`, read the candidate's final lines again on the page image and copy what is actually written; do not change the transcript to match the mark scheme.
-
-Look at **only those steps** again on the page images, zooming in, and correct your evidence where you were wrong. For reason `correctness_required` (an accuracy mark whose scheme demands correct work, cao or cso): compare the candidate's expression or value **symbol by symbol** with the one in the step description — a right-looking form with a wrong term, power, sign or function (e.g. `3cos²t` where the scheme has `3sin²t cos t`) is not earned. Do this once; do not loop. Then submit (section 5). Tell the user in one line: "正在复核 N 个不确定的得分点……".
-
-## 5. Submit and hand back the PDF
-
-Build the evidence JSON exactly as in `references/evidence-schema.md` (whole paper: the same `paper` fields you used in 3A; mixed questions: `"question_set": {"question_ids": [...]}` instead of `paper`; plus `"lang": "zh"` or `"en"` matching the user). Then:
-
-`POST /results` as `multipart/form-data` with fields `script` (the uploaded PDF file; if the user sent photos, first combine them into one PDF in page order) and `evidence` (the JSON **text** as a form value, not a file upload). With curl:
-
-```bash
-curl -sS -X POST "$BASE/api/v1/marking-kit/results" \
-  -H "Authorization: Bearer $(cat ~/.passmarkedu/marking-kit-token)" \
-  -F "script=@script.pdf;type=application/pdf" \
-  -F "evidence=<evidence.json"
-```
-
-(`<file` sends the file's content as a text field; `@file` would send it as a file and is rejected.)
-
-Before submitting, check: every `unit_id` of every question appears once; every attempted unit has its steps. A unit sent as attempted but with no steps comes back as "未判分" and the paper gets no grade.
-
-- 422 → your evidence JSON does not match the checklist; fix the field it names and resubmit.
-- 413 → the scan is over 50 MB; ask the user for a smaller scan.
-- 201 → reply in the chat, in this order, short:
-  1. If `reliability.level` is `"low"`, first: "这次判分可信度偏低（几乎全部判为得分、证据与评分标准雷同，或多个小问没有逐点给证据），建议换用更强的模型重新批改，或逐题核对后再使用。"
-  2. The result: total `total` out of `max_total` minus the `unsupported` marks, and the grade — `grade`, or `grade_range` as "B–A（取决于未批改的 N 分）", or "暂不定级" when both are null. For mixed questions, say it is a folded indicative grade and list each question's source.
-  3. One line per question with its score; unsupported parts as "暂不支持自动批改，未计入".
-  4. If `review_items` is not empty: "发出去之前，建议先看这几处：" then one line per item — label, page (`答卷第 N 页`), its `notes`, and for `evidence_not_in_transcript` the value you read (`final_answer`) so it can be compared with the page; for `scheme_conflict`, your one-sentence reason. Offer to change any of them (section 6).
-  5. The PDF link `download_url` (valid until `expires_at`) and the official mark scheme `ms_pdf_url` from the checklist. If parts were unsupported, add: "暂不支持的题可以对照评分标准原页自己核对。"
-  6. One line: this is AI marking against the official mark scheme; check the points above before relying on it.
-  Keep the `result_id`.
-
-## 6. User corrections
-
-When the user says a mark is wrong (e.g. "6(b) 应该给 1 分，因为…"), update the affected steps in your evidence JSON (set `present`/`awarded`, put the user's reason in `note`, `confidence: "high"`) and `PUT /results/<result_id>` with the multipart field `evidence` only (`-F "evidence=<evidence.json"`). Reply with the new total, grade, any remaining `review_items`, and the new `download_url`. Corrections never use a paper credit. When the user says it all looks right, just hand over the latest `download_url` — the PDF is already the version to pass on.
-
-## Files
-
-- `references/api.md` — endpoints, response fields, errors.
-- `references/evidence-schema.md` — the evidence JSON with a worked example.
-- `references/marking-rules.md` — rules for every subject.
-- `references/rules-maths.md`, `rules-sciences.md`, `rules-economics-business.md`, `rules-accounting.md` — read only the one for the paper's subject.
+For a pre-helper result, use its original evidence with `PUT /results/<id>` as documented in [api.md](references/api.md). If that evidence is unavailable, request the original marking session or a fresh run. An expired result cannot be recovered by its old download link.

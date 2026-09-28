@@ -8,7 +8,4 @@
 
 ## Levels-based (extended) questions — `level` steps
 
-1. Read each level's descriptor in `levels` from the top down; the answer's level is the highest descriptor it **fully** meets.
-2. Within the band, start in the middle; move up for more developed chains of reasoning, relevant use of the context and a supported judgement; move down for gaps, errors or one-sided answers.
-3. Evaluation marks need a judgement with a reason ("depends on …", "in the short run … but …"), not just "however".
-4. Put the level, the marks and a one-sentence reason in `note`. Level judgements are always reviewed by the user.
+Follow `marking-rules.md` (Levels-based answers), then the board's file under `references/levels/`.

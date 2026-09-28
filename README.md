@@ -1,8 +1,8 @@
-# PassMarkedu Skills
+# PassMarked A-level Skills
 
-AI 阅卷 Skill：按 Cambridge International（CAIE）与 Pearson Edexcel IAL 官方评分标准逐分点批改学生答卷，输出批改 PDF（逐小问标分、批改说明、官方评分标准、官方等级）。评分标准、题目识别、算分与出 PDF 由 [PassMarkedu](https://passmarkedu.com) 服务端完成；使用需要 PassMarkedu 账号（免费 1 份，订阅不限次）。
+按 CAIE AS & A Level 与 Pearson Edexcel IAL 官方评分标准逐题批改答卷，生成含得分、批改说明和官方评分标准的 PDF。由 [PassMarked A-level](https://passmarkedu.com/marking-kit) 提供评分清单、算分与 PDF 服务。
 
-An AI marking skill for CAIE and Pearson Edexcel IAL past-paper scripts: point-by-point marking against the official mark scheme, returning a marked PDF with the official grade. Requires a PassMarkedu account.
+An official mark-scheme based marking skill for CAIE AS & A Level and Pearson Edexcel IAL scripts. Connect your account, upload a script in your AI app, and receive a marked PDF.
 
 ## 安装 / Install
 
@@ -10,16 +10,12 @@ An AI marking skill for CAIE and Pearson Edexcel IAL past-paper scripts: point-b
 npx skills@latest add PassMarkedu/skills
 ```
 
-国内网络推荐：把这句话发给你的 AI（Codex / Claude / WorkBuddy）——
+安装完成后，告诉 AI：「启用 passmarkedu-marking，介绍并连接账号」。命令行安装本身不会自动进行网站授权。
 
-> 请帮我安装 PassMarkedu 阅卷 Skill：从 https://passmarkedu.com/skills/passmarkedu-marking.zip 下载，解压后把 passmarkedu-marking 文件夹放到你的 Skill 目录（Codex：~/.agents/skills/；Claude Code：~/.claude/skills/；WorkBuddy：~/.workbuddy/skills/），然后告诉我是否安装成功。
+也可以把下面这句话发给你的 AI：
 
-WorkBuddy 用户也可以在 SkillHub 搜索「PassMarkedu 阅卷」一键安装。
+> 请帮我安装 PassMarked A-level 阅卷 Skill：从 https://passmarkedu.com/skills/passmarkedu-marking.zip 下载，解压后把 passmarkedu-marking 文件夹放到你的 Skill 目录。安装成功后，读取 SKILL.md 和 references/onboarding.md，展示欢迎介绍并引导我连接账号；用接口实际返回的授权链接和授权码，不要使用示例值。若已保存授权则保留，不重复登录。
 
-## 使用 / Usage
+详细步骤见 [安装说明](skills/passmarkedu-marking/INSTALL.md)，支持学科、年份和限制见[常见问题](https://passmarkedu.com/marking-kit#faq)。免费账号可批改 1 份试卷，订阅后不限次。
 
-上传学生答卷扫描件，说「帮我批改这份试卷」。详见 [`skills/passmarkedu-marking/INSTALL.md`](skills/passmarkedu-marking/INSTALL.md) 与 https://passmarkedu.com/marking-kit 。
-
----
-
-This repository is published from PassMarkedu's main repository; please open issues here or contact support via passmarkedu.com. © PassMark. All rights reserved.
+This repository is published from PassMarkedu's main repository. Contact support via passmarkedu.com.

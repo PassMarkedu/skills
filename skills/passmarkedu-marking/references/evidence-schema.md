@@ -1,5 +1,9 @@
 # Evidence JSON
 
+In workflow 1.9, fill the real-ID per-question judgement files in batches. `check` accepts judgement evidence before report prose is written. After scoring, put `comment`, `headline`, `mistakes` and `solution` in `reports/<number>.json`, with each task’s `judgement_sha256`. The helper merges them into the existing payload below; older inline explanations remain accepted. Keep `transcript`, `final_answer`, positions, point judgements and `scheme_conflict` in the evidence file.
+
+When present, top-level `scheme_revision` is the opaque revision supplied by preparation; a different current revision is rejected with `409 scheme_changed`.
+
 Sent as the `evidence` form field of `POST /results` and `PUT /results/<id>`.
 
 ```json
@@ -37,15 +41,15 @@ Field rules:
 |---|---|
 | `question_set` | Mixed-question mode only, instead of `paper`: `{"question_ids": [...]}` exactly as sent to `POST /question-sets`. |
 | `paper` | Same values used for `GET /papers`. Edexcel: `{"board":"edexcel","code":"WST01","series":"October 2025","variant":"A"}` (`variant` only if printed). |
-| `lang` | `zh` or `en` — language of the marked PDF. |
+| `lang` | `zh` or `en` — language of both PDFs. |
 | `units[].unit_id` | Must be one of the checklist's `scoring_units[].unit_id`. Unknown ids are rejected (422). Units you leave out count as not attempted. |
 | `attempted` | `false` for blank parts; then omit `steps`. |
 | `page` | 1-based page of the uploaded PDF where the answer starts (count every page). |
 | `y` | 0–1, how far down that page the answer starts. |
-| `transcript` | Your pass-1 transcription of the unit, ≤4000 characters. Every value in `final_answer` must appear in it, or the unit is flagged for the user. |
-| `final_answer` | The candidate's final answer exactly as written; `""` if none. Shown for every unit. |
+| `transcript` | Faithful mark-bearing working and relevant corrections from the unit, ≤4000 characters. Every value in `final_answer` must appear in it, or the unit is flagged for the user. |
+| `final_answer` | The candidate's final answer exactly as written; `""` if none. Used for transcript checks and review items; not printed as a separate cover-page field. |
 | `comment` | One sentence: the overall verdict, in words a candidate understands. |
-| `headline` | Units that lost marks: the main reason in ≤20 Chinese characters; printed beside the score on the answer page. |
+| `headline` | Units that lost marks: the main reason in ≤20 Chinese characters; included in the marking report’s main lost-point overview. |
 | `mistakes` | Units that lost marks: 1–4 `{"wrote", "why", "should"}`, one per actual error in the candidate's work (not per lost mark). |
 | `solution` | Units that lost marks or were not attempted: 2–6 key lines of a correct method, ending with the answer. |
 | `scheme_conflict` | Only when you think PassMarkedu's scoring contradicts the official mark scheme; user-only. Step ids or server wording in any other field → 422. |
@@ -56,5 +60,5 @@ Field rules:
 | `steps[].matched` | `pick_n` steps: list of 0-based indices into `pick.options` that the candidate states. |
 | `steps[].level` | `level` steps: the level reached (0 = none). |
 | `steps[].confidence` | `high` / `medium` / `low`. |
-| `steps[].evidence` | Short quote of the candidate's work copied from `transcript`, ≤1000 characters. |
+| `steps[].evidence` | Short quote of the candidate's work copied from `transcript`, ≤150 characters (the API accepts up to 1000; this skill uses a short, specific quote). |
 | `steps[].note` | Special cases ("SC"), `level` reasons and user corrections only. |
