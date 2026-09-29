@@ -1,6 +1,6 @@
 # Evidence JSON
 
-In workflow 1.9, fill the real-ID per-question judgement files in batches. `check` accepts judgement evidence before report prose is written. After scoring, put `comment`, `headline`, `mistakes` and `solution` in `reports/<number>.json`, with each task’s `judgement_sha256`. The helper merges them into the existing payload below; older inline explanations remain accepted. Keep `transcript`, `final_answer`, positions, point judgements and `scheme_conflict` in the evidence file.
+In workflow 1.10, `batch` prints real-ID templates; write each batch's completed units to its new `evidence/batch-*.json` file (every supported unit in exactly one evidence file). `check` accepts judgement evidence before report prose is written. After scoring, put `comment`, `headline`, `mistakes`, `solution` and, for parts the review note lists, `review_detail` in `reports/<number>.json`; full-mark units get a fixed comment at submit instead. The helper merges them into the payload below; older inline explanations remain accepted. Keep `transcript`, `final_answer`, positions, `figure`, point judgements and `scheme_conflict` in the evidence file.
 
 When present, top-level `scheme_revision` is the opaque revision supplied by preparation; a different current revision is rejected with `409 scheme_changed`.
 
@@ -27,6 +27,8 @@ Sent as the `evidence` form field of `POST /results` and `PUT /results/<id>`.
       "solution": ["∫2x ln(3x) dx = x²ln(3x) − ∫x dx = x²ln(3x) − x²/2", "代入 3 和 1：(9ln9 − 9/2) − (ln3 − 1/2)", "= 17ln3 − 4"],
       "steps": [
         {"step_id": "main.s1", "present": true, "confidence": "high", "evidence": "x²ln3x − ∫x²·1/(3x) dx"},
+        {"step_id": "main.s2", "present": true, "confidence": "medium", "reason": "deletion", "evidence": "x²ln3x − x²/6",
+         "note": "第二行改写过，按未划掉的一行判断。"},
         {"step_id": "main.s3", "present": false, "confidence": "high", "evidence": "x²ln3x − x²/6"}
       ]
     },
@@ -46,8 +48,9 @@ Field rules:
 | `attempted` | `false` for blank parts; then omit `steps`. |
 | `page` | 1-based page of the uploaded PDF where the answer starts (count every page). |
 | `y` | 0–1, how far down that page the answer starts. |
+| `figure` | Units with a `visual` step: `{"page": 3, "box": [0.2, 0.55, 0.8, 0.9]}` around the drawing (fractions of the upright page, like `crop` boxes, any size); `null` or absent when nothing was drawn. Only the review note uses it. |
 | `transcript` | Faithful mark-bearing working and relevant corrections from the unit, ≤4000 characters. Every value in `final_answer` must appear in it, or the unit is flagged for the user. |
-| `final_answer` | The candidate's final answer exactly as written; `""` if none. Used for transcript checks and review items; not printed as a separate cover-page field. |
+| `final_answer` | The last expression or statement the candidate offers that is not crossed out, exactly as written; `""` if none. Compared with the transcript and the expected answer; not printed as a separate cover-page field. |
 | `comment` | One sentence: the overall verdict, in words a candidate understands. |
 | `headline` | Units that lost marks: the main reason in ≤20 Chinese characters; included in the marking report’s main lost-point overview. |
 | `mistakes` | Units that lost marks: 1–4 `{"wrote", "why", "should"}`, one per actual error in the candidate's work (not per lost mark). |
@@ -59,6 +62,32 @@ Field rules:
 | `steps[].value` | `numeric` steps: the candidate's final answer copied exactly as written (text). PassMarkedu compares it. |
 | `steps[].matched` | `pick_n` steps: list of 0-based indices into `pick.options` that the candidate states. |
 | `steps[].level` | `level` steps: the level reached (0 = none). |
-| `steps[].confidence` | `high` / `medium` / `low`. |
+| `steps[].confidence` | `high` / `medium` / `low`, as defined in judging.md. |
+| `steps[].reason` | Medium and low steps: `legibility`, `condition`, `deletion`, `alternative_method`, `follow_through`, `drawing`, `levels` or `scheme_gap`. |
 | `steps[].evidence` | Short quote of the candidate's work copied from `transcript`, ≤150 characters (the API accepts up to 1000; this skill uses a short, specific quote). |
-| `steps[].note` | Special cases ("SC"), `level` reasons and user corrections only. |
+| `steps[].note` | Medium and low steps: one sentence on what is uncertain. Also special cases ("SC"), `level` reasons and user corrections. In the user's language, no point IDs (shown in the review note). |
+| `blank_check` | Set by the helper on `attempted: false` units: `empty`, `ink` or `unknown` from their pages against the printed booklet. Not written by hand. |
+
+## review_detail
+
+Written in the report sidecar for each part whose explanation task `needs` it (the parts the review note lists). Only the review note, for the person running the marking, reads it; it never changes a mark.
+
+```json
+"review_detail": {
+  "ai_view": "a = 0 算写出的答案，按评分标准扣最后 1 分",
+  "alt_marks": 4,
+  "alt_view": "a = 0 只是解方程的一步，答案只写了 −4.8",
+  "crop": {"page": 6, "box": [0.55, 0.64, 0.79, 0.71]},
+  "circles": [{"page": 6, "box": [0.61, 0.67, 0.68, 0.69]}],
+  "ms_quote": {"step_id": "b.s4", "text": "… If $a = 0$ is also given and not rejected, score A0", "underline": ["not rejected, score A0"], "page": 17}
+}
+```
+
+| field | rule |
+|---|---|
+| `ai_view` | One sentence (≤120 characters) in the user's language: how the awarded mark was judged. |
+| `alt_marks` | The most plausible other mark for the part: an integer 0..max, not the awarded mark. |
+| `alt_view` | One sentence (≤120 characters): the reading that gives `alt_marks`. |
+| `crop` | The decisive lines on the original page: `{page, box}`, box as for `crop` (fractions of the upright page). |
+| `circles` | 1–6 `{page, box}` around the exact thing in doubt, on the crop's page and inside the crop. |
+| `ms_quote` | `step_id`: the step the decision turns on (from the task's `scored_steps`); `text`: copied from that step's `description` (spacing and LaTeX markup aside; "…" may stand for words left out, pieces in order), ≤300 characters; `underline`: 1–6 key phrases copied from `text`; `page`: the mark-scheme page, when known. |

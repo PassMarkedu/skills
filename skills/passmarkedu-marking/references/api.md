@@ -33,7 +33,7 @@ usage            {is_premium, free_papers_total, free_papers_used, free_papers_r
 
 `paper.unsupported[]` (`{label, marks}`) lists parts with no structured mark scheme yet: announce them before marking and leave them out.
 
-Errors: 400 bad cover values; 404 no such paper, or `detail` starting `paper_not_supported` when no part of the paper can be auto-marked (nothing is charged); 429 `{"code":"quota_exceeded", "meter":"marking_papers", ...}` → free credit used up, point the user to `usage.subscribe_url` / `<base>/pricing`.
+Errors: 400 bad cover values; 404 no such paper, or `detail` starting `paper_not_supported` when no part of the paper can be auto-marked (nothing is charged); 429 `{"error": {"code": "quota_exceeded", "meter": "marking_papers", ...}}` → free credit used up, point the user to `usage.subscribe_url` / `<base>/pricing`.
 
 ## Mixed questions (§546)
 
@@ -70,11 +70,12 @@ Result: `{result_id, paper, total, max_total, grade, grade_range, grade_boundari
 - `unsupported[]`: `{label, marks}` — parts with no structured mark scheme; not marked, not in `total`. `max_total` is the whole paper; the marked part is `max_total` minus their marks.
 - `grade_range`: `[low, high]` when the unsupported marks could change the grade (then `grade` is null); otherwise `grade` is set and `grade_range` is null.
 - `review_items[]`: `{label, page, reasons[], notes[], final_answer, scheme_conflict}` — what to check before passing the PDF on; `notes` are ready-to-say sentences in the result's language. Say them in the chat; they are never printed on the PDF.
-`units[]`: `{unit_id, label, question_number, status: scored|unsupported|not_attempted, awarded, max_marks, flags[], steps[], comment, page, y}`.
-`flags`: `low_confidence`, `visual`, `missing_evidence`, `dependency_conflict`, `dependency_uncertain`, `numeric_unchecked`, `level_judgement`, `awarded_clamped`, `capped`, `unmarked`.
+`units[]`: `{unit_id, label, question_number, status: scored|unsupported|not_attempted, awarded, max_marks, flags[], steps[], comment, page, y, review}`.
+`flags`: `low_confidence`, `visual`, `missing_evidence`, `dependency_conflict`, `dependency_uncertain`, `numeric_unchecked`, `level_judgement`, `awarded_clamped`, `capped`, `unmarked`, `answer_mismatch` (the final answer disagrees with the accuracy mark).
+`review`: `{tier: none|glance|check, reasons[]}` — whether a person should look at the part; `check` parts are the ones to name in the reply.
 The result also carries `recheck[]` and `reliability` as in the dry run.
 `grade` is null when the series has no official thresholds or some parts are not yet supported.
 
-Errors: 413 scan over 50 MB; 422 evidence does not match the checklist (the message names the field); 404 result expired (results are kept 7 days).
+Errors: 413 scan over 50 MB; 422 evidence does not match the checklist (the message names the field); 404 result expired (results are kept 7 days). Any call may fail with 5xx `{"error": {"code", "request_id"}}`: give the user the operation and `request_id` and retry later.
 
 Notes on steps: `depends_on` lists prerequisite step ids; when it names steps from several alternative routes, only the prerequisites on the route the candidate followed count. `visual: true` marks a step judged on a drawing.

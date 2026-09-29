@@ -8,18 +8,26 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import uuid
+from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 import config
-from common import WorkflowError, digest, read
-from evidence import compact_summary, merged, judging_payload, with_reports, score_summary
-from rendering import crop_page, page_count, pages_for, validate_box
+import corrections
+import pagemap
+import review_detail
+from common import WorkflowError, digest, ensure_dir, read
+from evidence import (compact_summary, evidence_target, judging_payload, merged, question_view,
+                      score_summary, unit_files, unit_hashes, with_reports)
+from rendering import (MAX_DPI, content_box, crop_dpi, crop_page, page_count, page_sizes, render_cover,
+                       render_pages, render_tiles, validate_box)
+
+
+SAFE_TOKEN = re.compile(r'[A-Za-z0-9._:-]{1,80}')
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -63,6 +71,12 @@ def api(origin: str, method: str, suffix: str, payload: object = None, multipart
             if isinstance(error, dict):
                 detail = error.get('detail')
                 code = error.get('code')
+                envelope = error.get('error') if isinstance(error.get('error'), dict) else {}
+                if exc.code >= 500:
+                    # The service's error code and request ID are what support needs; nothing else is echoed.
+                    service_code, request_id = (value if isinstance(value, str) and SAFE_TOKEN.fullmatch(value) else None
+                                                for value in (envelope.get('code'), envelope.get('request_id')))
+                    classification = ', '.join(filter(None, (service_code, request_id and f'request_id {request_id}')))
                 if isinstance(detail, str) and detail.startswith('paper_not_supported'):
                     classification = 'paper_not_supported (no credit charged)'
                 elif exc.code == 409 and isinstance(detail, str) and detail.startswith('paper_variant_unclear'):
@@ -71,7 +85,7 @@ def api(origin: str, method: str, suffix: str, payload: object = None, multipart
                     classification = 'scheme_changed; reprepare in a new work directory'
                 elif exc.code == 422 and detail == 'scheme_dependency_unresolved':
                     classification = 'scheme_dependency_unresolved; check the affected scoring unit and contact support'
-                elif exc.code == 429 and code == 'quota_exceeded':
+                elif exc.code == 429 and 'quota_exceeded' in (code, envelope.get('code')):
                     classification = 'quota_exceeded'
         except (ValueError, OSError):
             pass
@@ -97,7 +111,7 @@ def asset(url: str, destination: Path, origin: str, pdf: bool = False) -> None:
         raise WorkflowError(f'Could not download {destination.name}; retry submit later') from None
     if pdf and not data.startswith(b'%PDF'):
         raise WorkflowError(f'{destination.name} was not a PDF; retry submit later')
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    ensure_dir(destination.parent)
     temp = destination.with_name(destination.name + '.tmp')
     temp.write_bytes(data)
     os.replace(temp, destination)
@@ -129,23 +143,146 @@ def work_state(work: Path) -> dict:
 
 
 MANAGED_PATHS = (
-    'manifest.json', 'checklist.json', 'script.pdf', 'pages', 'questions',
+    'manifest.json', 'checklist.json', 'script.pdf', 'pages', 'tiles', 'questions',
     'evidence', 'reports', 'crops', 'evidence.json', 'score.json',
-    'check.json', 'check-summary.json', 'result.json',
+    'check.json', 'check-summary.json', 'result.json', 'question-paper.pdf',
     'annotated_script.pdf', 'marking_report.pdf',
 )
+
+
+def is_pdf(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    with path.open('rb') as handle:
+        return handle.read(4) == b'%PDF'
+
+
+def version_key(value: object) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r'\d+', str(value or '')))
+
+
+def update_available(origin: str) -> dict | None:
+    """The service's newer skill release; any failure means no notice."""
+    try:
+        with urlopen(Request(origin + '/api/v1/marking-kit/skill'), timeout=5) as response:
+            info = json.load(response)
+        local = (config.SKILL_DIR / 'VERSION').read_text(encoding='utf-8').strip()
+        if isinstance(info, dict) and version_key(info.get('version')) > version_key(local):
+            return {'version': info.get('version'), 'zip_url': info.get('zip_url')}
+    except Exception:
+        pass
+    return None
+
+
+def run_directory(script: Path, chosen: str | None) -> Path:
+    if chosen:
+        run = Path(chosen).expanduser().resolve()
+        if run.exists() and not (run / 'manifest.json').exists():
+            collisions = [name for name in MANAGED_PATHS if (run / name).exists() or (run / name).is_symlink()]
+            if collisions:
+                raise WorkflowError(f'Run directory has helper output without a manifest: {", ".join(collisions)}')
+        return ensure_dir(run)
+    folder = script.parent
+    skill = config.SKILL_DIR.resolve()
+    if folder == skill or skill in folder.parents or any((p / '.git').exists() for p in (folder, *folder.parents)):
+        folder = Path.home()  # never inside a code repository or the skill itself
+    root = ensure_dir(folder / 'passmarkedu-runs')
+    name = (re.sub(r'[^\w.-]+', '-', script.stem).strip('-.') or 'script') + datetime.now().strftime('-%Y%m%d-%H%M')
+    for number in range(1, 1000):
+        run = root / (name if number == 1 else f'{name}-{number}')
+        try:
+            run.mkdir()
+            return run
+        except FileExistsError:
+            continue
+    raise WorkflowError('Could not create a new run directory')
+
+
+def start(args: argparse.Namespace) -> None:
+    script = Path(args.script).expanduser().resolve()
+    if not is_pdf(script):
+        raise WorkflowError('Script must be an existing PDF')
+    origin = config.resolve_origin()
+    token_file = config.token_path(origin, Path.home(), Path.cwd())
+    run = run_directory(script, args.run_dir)
+    cover = run / 'cover-page.png'
+    shown = cover.is_file() or render_cover(script, cover)
+    texts = pagemap.page_texts(script, 1, 1)
+    print(json.dumps({'run_dir': str(run), 'cover_image': str(cover) if shown else None,
+                      'page_count': page_count(script), 'base': origin, 'api_base': origin + '/api/v1/marking-kit',
+                      'token_path': str(token_file), 'token_exists': token_file.is_file(),
+                      'update': update_available(origin),
+                      'cover_text_hint': pagemap.cover_reference(texts[0]) if texts else None}, ensure_ascii=False))
+
+
+def paper_from_ref(reference: str, series: str | None, board: str | None) -> dict:
+    """``WMA13/01A`` / ``9709/13`` plus the printed series as the /papers query."""
+    if not series or not series.strip():
+        raise WorkflowError('--paper-ref needs --series as printed on the cover, e.g. "January 2026"')
+    text = re.sub(r'\s+', '', reference).upper()
+    caie = re.fullmatch(r'(\d{4})/(\d{2})(?:/[A-Z0-9/]*)?', text)
+    edexcel = re.fullmatch(r'([A-Z]{3}\d{2})(?:/(\d{2}[A-Z]?))?', text)
+    found = caie or edexcel
+    inferred = 'caie' if caie else 'edexcel'
+    if not found or (board and board != inferred):
+        raise WorkflowError('Paper reference must be copied from the cover, e.g. WMA13/01A (Edexcel) or 9709/13 (CAIE)')
+    code, component = found.groups()
+    paper = {'board': inferred, 'code': code}
+    if component:
+        paper['component'] = component
+    paper['series'] = series.strip()
+    return paper
+
+
+def derive_page_map(work: Path, checklist: dict, state: dict) -> dict:
+    """Booklet page map from the official question paper, or the reason there is none."""
+    url = checklist.get('qp_pdf_url')
+    if not isinstance(url, str) or not url:
+        return {'reason': 'the service supplied no question paper for this sitting'}
+    paper = work / 'question-paper.pdf'
+    try:
+        if not is_pdf(paper):
+            asset(url, paper, state['origin'], pdf=True)
+    except WorkflowError:
+        return {'reason': 'the question paper could not be downloaded'}
+    texts = pagemap.page_texts(paper)
+    if texts is None:
+        return {'reason': 'no PDF text extractor (pdftotext or PyMuPDF) is installed'}
+    count = len(state['pages']) or page_count(work / 'script.pdf')
+    if not count:
+        return {'reason': 'the scan page count is unknown'}
+    mapping, unassigned, reason = pagemap.derive(texts, [str(q['number']) for q in checklist['questions']], count)
+    if mapping is None:
+        return {'reason': reason}
+    if not (work / 'page-map.json').exists():
+        dump(work / 'page-map.json', mapping)
+    return {'source': 'question_paper', 'map': mapping, 'unassigned': unassigned, 'booklet_start': pagemap.booklet_start(texts)}
+
+
+def render_views(work: Path, state: dict) -> None:
+    """Whole-page views and reading tiles, once per work directory."""
+    script = work / 'script.pdf'
+    if not state['pages'] and state['render_guidance'] == 'Rendering pending':
+        state['pages'], state['render_guidance'] = render_pages(script, work, page_count(script))
+    if state['pages'] and 'tiles' not in state:
+        sizes = page_sizes(script)
+        box = content_box(script, work, sizes) if sizes else None
+        tiles = render_tiles(script, work, sizes, box) if sizes else None
+        state.update(tiles=tiles[0] if tiles else None, tile_dpi=tiles[1] if tiles else None, trim_box=box)
 
 
 def prepare(args: argparse.Namespace) -> None:
     work = Path(args.work_dir).resolve()
     script = Path(args.script).resolve()
-    if not script.is_file() or not script.read_bytes()[:4] == b'%PDF':
+    if not is_pdf(script):
         raise WorkflowError('Script must be an existing PDF')
+    if (args.series or args.board) and not args.paper_ref:
+        raise WorkflowError('--series and --board belong with --paper-ref')
     origin = config.resolve_origin()
-    if args.paper_json:
-        identity = {'paper': read(Path(args.paper_json))}
-        query = urlencode(identity['paper'])
-        method, suffix, payload = 'GET', '/papers?' + query, None
+    if args.paper_ref or args.paper_json:
+        paper = paper_from_ref(args.paper_ref, args.series, args.board) if args.paper_ref else read(Path(args.paper_json))
+        identity = {'paper': paper}
+        method, suffix, payload = 'GET', '/papers?' + urlencode(paper), None
     else:
         raw = json.loads(Path(args.question_ids_json).read_text(encoding='utf-8'))
         ids = raw['question_ids'] if isinstance(raw, dict) else raw
@@ -180,7 +317,7 @@ def prepare(args: argparse.Namespace) -> None:
         if collisions:
             raise WorkflowError(f'Work directory has helper output without a manifest: {", ".join(collisions)}')
         checklist = api(origin, method, suffix, payload)
-        work.mkdir(parents=True, exist_ok=True)
+        ensure_dir(work)
         dump(work / 'checklist.json', checklist)
     questions = checklist.get('questions')
     if not isinstance(questions, list) or not questions:
@@ -195,16 +332,14 @@ def prepare(args: argparse.Namespace) -> None:
         dump(manifest_path, {'origin': origin, 'identity': identity, 'script_sha256': script_sha,
                              'lang': args.lang, 'questions': numbers, 'pages': [], 'render_guidance': 'Rendering pending'})
     state = read(manifest_path)
-    page_paths, guidance = (state['pages'], state['render_guidance'])
-    if not page_paths and guidance == 'Rendering pending':
-        page_paths, guidance = pages_for(local_script, work)
-        state.update(pages=page_paths, render_guidance=guidance)
+    render_views(work, state)
+    dump(manifest_path, state)
+    if 'paper' in identity and 'page_map' not in state:
+        state['page_map'] = derive_page_map(work, checklist, state)
         dump(manifest_path, state)
-    packets = work / 'questions'
-    packets.mkdir(exist_ok=True)
-    evidence_dir = work / 'evidence'
-    evidence_dir.mkdir(exist_ok=True)
-    (work / 'reports').mkdir(exist_ok=True)
+    packets = ensure_dir(work / 'questions')
+    ensure_dir(work / 'evidence')
+    ensure_dir(work / 'reports')
     for question in questions:
         number = str(question['number'])
         ms_path = None
@@ -226,30 +361,61 @@ def prepare(args: argparse.Namespace) -> None:
         packet_path = packets / f'{number}.json'
         if not packet_path.exists():
             dump(packet_path, packet)
-        units = []
-        for unit in supported:
-            steps = []
-            for step in unit.get('steps', []):
-                template = {'step_id': step['step_id'], 'present': None, 'confidence': None, 'evidence': None}
-                if step.get('type') == 'numeric':
-                    template['value'] = None
-                elif step.get('type') == 'pick_n':
-                    template['matched'] = None
-                elif step.get('type') == 'level':
-                    template.update(level=None, awarded=None, note=None)
-                elif step.get('type', 'point') == 'point' and int(step.get('step_marks', 1)) > 1:
-                    template['awarded'] = None
-                steps.append(template)
-            units.append({'unit_id': unit['unit_id'], 'attempted': None, 'page': None, 'y': None,
-                          'transcript': None, 'final_answer': None, 'comment': None, 'steps': steps})
-        evidence_path = evidence_dir / f'{number}.json'
-        if not evidence_path.exists():
-            dump(evidence_path, {'units': units})
-    index = [{'number': str(q['number']), 'subject': q.get('subject', checklist.get('subject')),
-              'supported_units': sum(bool(u.get('supported')) for u in q.get('scoring_units', [])),
-              'unsupported': [{'label': u.get('label'), 'marks': u.get('marks')} for u in q.get('scoring_units', []) if not u.get('supported')]} for q in questions]
-    print(json.dumps({'status': 'resumed' if resumed else 'prepared', 'questions': index,
-                      'pages': page_paths, 'render_guidance': guidance, 'manifest': str(manifest_path)}, ensure_ascii=False))
+    print(json.dumps(preparation_summary(work, state, checklist, resumed), ensure_ascii=False))
+
+
+def preparation_summary(work: Path, state: dict, checklist: dict, resumed: bool) -> dict:
+    derived = state.get('page_map') or {}
+    effective = derived.get('map')
+    if (work / 'page-map.json').is_file():
+        try:
+            effective = read(work / 'page-map.json')
+        except (ValueError, WorkflowError):
+            effective = None
+    tiles = state.get('tiles') or []
+    count = len(state['pages'])
+    index = []
+    for q in checklist['questions']:
+        number = str(q['number'])
+        entry = {'number': number, 'subject': q.get('subject', checklist.get('subject')),
+                 'supported_units': sum(bool(u.get('supported')) for u in q.get('scoring_units', [])),
+                 'unsupported': [{'label': u.get('label'), 'marks': u.get('marks')} for u in q.get('scoring_units', []) if not u.get('supported')]}
+        pages = (effective or {}).get(number)
+        if isinstance(pages, list) and pages and all(type(p) is int and 1 <= p <= len(tiles) for p in pages):
+            entry['pages'] = pages
+            entry['tiles'] = [tile for page in pages for tile in tiles[page - 1]]
+        elif isinstance(pages, list):
+            entry['pages'] = pages
+        index.append(entry)
+    output = {'status': 'resumed' if resumed else 'prepared', 'questions': index}
+    if effective:
+        used = {p for pages in effective.values() if isinstance(pages, list) for p in pages}
+        output['page_map_source'] = 'question_paper' if effective == derived.get('map') else 'page-map.json'
+        output['unassigned_pages'] = [p for p in range(1, count + 1) if p not in used]
+    else:
+        output['page_map'] = None
+        output['page_map_reason'] = derived.get('reason') or 'mixed questions: build the map from the whole-page views'
+    output['whole_pages'] = {str(page): path for page, path in enumerate(state['pages'], 1)}
+    if state.get('tile_dpi'):
+        output['tile_dpi'] = min(state['tile_dpi'])
+    if state['render_guidance']:
+        output['render_guidance'] = state['render_guidance']
+    return output
+
+
+def selected_pages(state: dict, number: str, raw_pages: list, work: Path) -> list[int]:
+    selected = []
+    count = len(state['pages']) or page_count(work / 'script.pdf')
+    for raw in raw_pages:
+        if type(raw) is not int and (not isinstance(raw, str) or not re.fullmatch(r'[1-9]\d*', raw)):
+            raise WorkflowError(f'Question {number}: pages must be 1-based integers')
+        page = int(raw)
+        if page < 1 or (count is not None and page > count):
+            raise WorkflowError(f'Question {number}: page {page} outside rendered script')
+        if selected and page <= selected[-1]:
+            raise WorkflowError(f'Question {number}: pages must be ordered unique original pages')
+        selected.append(page)
+    return selected
 
 
 def question(args: argparse.Namespace) -> None:
@@ -258,28 +424,11 @@ def question(args: argparse.Namespace) -> None:
     number = str(args.number)
     if number not in state['questions']:
         raise WorkflowError('Unknown question number')
-    selected = selected_pages(state, number, args.pages.split(',') if args.pages else [], work)
-    packet_path = work / 'questions' / f'{number}.json'
-    print(json.dumps({'packet': read(packet_path), 'packet_path': str(packet_path),
-                      'evidence': str(work / 'evidence' / f'{number}.json'), 'pages': selected,
-                      'original_script': str(work / 'script.pdf'), 'render_guidance': state['render_guidance']}, ensure_ascii=False))
-
-
-def selected_pages(state: dict, number: str, raw_pages: list, work: Path) -> list[dict]:
-    selected = []
-    seen = set()
-    count = len(state['pages']) or page_count(work / 'script.pdf')
-    for raw in raw_pages:
-        if type(raw) is not int and (not isinstance(raw, str) or not re.fullmatch(r'[1-9]\d*', raw)):
-            raise WorkflowError(f'Question {number}: pages must be 1-based integers')
-        page = int(raw)
-        if page < 1 or (count is not None and page > count):
-            raise WorkflowError(f'Question {number}: page {page} outside rendered script')
-        if page in seen or (selected and page <= selected[-1]['page']):
-            raise WorkflowError(f'Question {number}: pages must be ordered unique original pages')
-        seen.add(page)
-        selected.append({'page': page, 'image': state['pages'][page - 1] if state['pages'] else None})
-    return selected
+    view = question_view(work, number, selected_pages(state, number, args.pages.split(',') if args.pages else [], work))
+    files = unit_files(work)
+    held = [files[unit['unit_id']][0] for unit in view['evidence_template'] if unit['unit_id'] in files]
+    target = held[0] if held else evidence_target(work, [number])
+    print(json.dumps({'evidence_file': str(target), 'evidence_exists': target.exists(), 'questions': [view]}, ensure_ascii=False))
 
 
 def batch(args: argparse.Namespace) -> None:
@@ -288,35 +437,39 @@ def batch(args: argparse.Namespace) -> None:
     numbers = args.numbers.split(',')
     if not numbers or len(numbers) > 2 or len(numbers) != len(set(numbers)) or any(n not in state['questions'] for n in numbers):
         raise WorkflowError('Batch needs one or two distinct known question numbers')
-    mapping = read(Path(args.pages_map))
+    map_path = Path(args.pages_map).resolve() if args.pages_map else work / 'page-map.json'
+    if not map_path.is_file():
+        raise WorkflowError('No page map yet: save page-map.json in the work directory from the whole-page views, then run batch')
+    mapping = read(map_path)
     if not set(numbers) <= set(mapping):
         raise WorkflowError('pages-map is missing a selected batch question')
     if not set(mapping) <= set(state['questions']):
         raise WorkflowError('pages-map has an unknown question number')
-    output = []
+    views = []
     for number in numbers:
         raw = mapping[number]
         if not isinstance(raw, list) or not raw:
             raise WorkflowError(f'Question {number}: pages-map needs a nonempty page list including continuations')
-        pages = selected_pages(state, number, raw, work)
-        packet_path = work / 'questions' / f'{number}.json'
-        packet = read(packet_path)
-        output.append({'number': number, 'packet_path': str(packet_path), 'packet': packet,
-                       'ms_image_path': packet.get('ms_image_path'), 'pages': pages,
-                       'evidence': str(work / 'evidence' / f'{number}.json'),
-                       'report': str(work / 'reports' / f'{number}.json')})
-    print(json.dumps({'questions': output, 'original_script': str(work / 'script.pdf'),
-                      'render_guidance': state['render_guidance']}, ensure_ascii=False))
+        views.append(question_view(work, number, selected_pages(state, number, raw, work)))
+    target = evidence_target(work, numbers)
+    output = {'evidence_file': str(target), 'evidence_exists': target.exists(), 'questions': views}
+    if state['render_guidance']:
+        output['render_guidance'] = state['render_guidance']
+    print(json.dumps(output, ensure_ascii=False))
 
 
 def crop(args: argparse.Namespace) -> None:
     work = Path(args.work_dir).resolve()
     state = work_state(work)
-    raw = json.loads(Path(args.regions_json).read_text(encoding='utf-8'))
+    raw = json.loads(args.regions if args.regions is not None else Path(args.regions_json).read_text(encoding='utf-8'))
     if not isinstance(raw, list) or not raw:
-        raise WorkflowError('regions-json must contain a nonempty list')
+        raise WorkflowError('regions must be a nonempty JSON list')
+    sizes = page_sizes(work / 'script.pdf')
+    if not sizes:
+        raise WorkflowError('Crop needs installed PyMuPDF or pdfinfo/pdftoppm')
+    tile_dpi = state.get('tile_dpi') or []
     seen = set()
-    regions = []
+    regions, problems = [], []
     for item in raw:
         if not isinstance(item, dict):
             raise WorkflowError('Each crop region must be an object')
@@ -325,22 +478,30 @@ def crop(args: argparse.Namespace) -> None:
             raise WorkflowError('Crop region id must be unique and filename-safe')
         seen.add(ident)
         page = item.get('page')
-        count = len(state['pages']) or page_count(work / 'script.pdf')
-        if type(page) is not int or page < 1 or (count is not None and page > count):
+        if type(page) is not int or page < 1 or page > len(sizes):
             raise WorkflowError(f'Crop {ident}: page must be an original 1-based page')
         box = validate_box(item.get('box'), f'Crop {ident}')
-        key = digest([state['script_sha256'], page, box, 300, 'oriented-v1'])[:24]
-        path = work / 'crops' / f'{key}.png'
-        regions.append((ident, page, box, path))
-    (work / 'crops').mkdir(exist_ok=True)
+        if box[2] - box[0] > 0.5 + 1e-9 or box[3] - box[1] > 0.5 + 1e-9:
+            problems.append(f'Crop {ident}: a box may cover at most half the page width and half its height; split it into smaller boxes')
+            continue
+        dpi = crop_dpi(sizes[page - 1], box)
+        tiles_at = tile_dpi[page - 1] if page <= len(tile_dpi) else None
+        if tiles_at and dpi < min(MAX_DPI, 1.3 * tiles_at):
+            problems.append(f'Crop {ident}: renders at {dpi} dpi, too close to the {tiles_at}-dpi tile to show more; split it into narrower boxes')
+            continue
+        key = digest([state['script_sha256'], page, box, dpi, 'oriented-v2'])[:24]
+        regions.append((ident, page, box, dpi, work / 'crops' / f'{key}.png'))
+    if problems:
+        raise WorkflowError('; '.join(problems))
+    ensure_dir(work / 'crops')
     output = []
-    for ident, page, box, path in regions:
+    for ident, page, box, dpi, path in regions:
         if not path.is_file():
             try:
-                crop_page(work / 'script.pdf', page, box, path)
+                crop_page(work / 'script.pdf', page, box, path, dpi)
             except ValueError as exc:
                 raise WorkflowError(f'Crop {ident}: {exc}') from None
-        output.append({'id': ident, 'page': page, 'box': box, 'image': str(path)})
+        output.append({'id': ident, 'page': page, 'box': box, 'dpi': dpi, 'image': str(path)})
     print(json.dumps({'regions': output}, ensure_ascii=False))
 
 
@@ -354,14 +515,20 @@ def do_check(work: Path, state: dict) -> tuple[dict, dict]:
         checked = read(checked_path)
         if checked.get('judgement_sha256') == judgement_sha:
             read(summary_path)
+            if 'units' not in checked:  # checked by an earlier 1.10 helper
+                checked['units'] = unit_hashes(evidence, {}, score_path.stat().st_mtime_ns)
+                dump(checked_path, checked)
             if not (work / 'evidence.json').is_file() or digest(read(work / 'evidence.json')) != digest(evidence):
                 dump(work / 'evidence.json', evidence)
             return evidence, read(score_path)
     result = api(state['origin'], 'POST', '/score', evidence)
+    previous = (read(checked_path).get('units') or {}) if checked_path.is_file() else {}
     dump(work / 'evidence.json', evidence)
     dump(score_path, result)
     dump(summary_path, score_summary(result, work, evidence))
-    dump(checked_path, {'judgement_sha256': judgement_sha, 'review_items': result.get('review_items') or [], 'recheck': result.get('recheck') or []})
+    # score.json's own timestamp dates this check on the file-system clock that also dates the reports.
+    dump(checked_path, {'judgement_sha256': judgement_sha, 'review_items': result.get('review_items') or [], 'recheck': result.get('recheck') or [],
+                        'units': unit_hashes(evidence, previous, score_path.stat().st_mtime_ns)})
     return evidence, result
 
 
@@ -378,6 +545,12 @@ def issue_ids(checked: dict) -> set[str]:
     for item in checked.get('review_items', []):
         ids.add('review:' + digest([item.get('label'), item.get('page'), sorted(item.get('reasons') or [])]))
     return ids
+
+
+def correct(args: argparse.Namespace) -> None:
+    work = Path(args.work_dir).resolve()
+    work_state(work)
+    print(json.dumps(corrections.add(work, args.label, args.marks), ensure_ascii=False))
 
 
 def multipart(fields: dict[str, str], file: Path | None = None) -> tuple[bytes, str]:
@@ -414,7 +587,9 @@ def submit(args: argparse.Namespace) -> None:
                               **compact_summary(read(work / 'check-summary.json'), work)}, ensure_ascii=False))
             return
         evidence = merged(work, state)
-    evidence = with_reports(work, evidence, require_complete=True)
+    elif 'units' not in checked:
+        do_check(work, state)  # checked by an earlier 1.10 helper: record each unit's judgement, no new call
+    evidence = with_reports(work, evidence, require_complete=True, page_count=len(state['pages']))
     if (checked.get('review_items') or checked.get('recheck')) and not args.reviewed:
         raise WorkflowError('Review listed items against page images, then submit with --reviewed')
     result_path = work / 'result.json'
@@ -423,20 +598,24 @@ def submit(args: argparse.Namespace) -> None:
         if args.result_id and args.result_id != result.get('result_id'):
             raise WorkflowError('result_id differs from saved result')
         if result.get('_evidence_sha256') != digest(evidence):
-            body, content_type = multipart({'evidence': json.dumps(evidence, ensure_ascii=False)})
+            body, content_type = multipart({'evidence': json.dumps(corrections.attach(work, evidence), ensure_ascii=False)})
             result = api(state['origin'], 'PUT', f"/results/{result['result_id']}", multipart=body, content_type=content_type)
             result['_evidence_sha256'] = digest(evidence)
             dump(result_path, result)
+            corrections.clear(work)
             for stale in (work / 'annotated_script.pdf', work / 'marking_report.pdf'):
                 stale.unlink(missing_ok=True)
     else:
-        body, content_type = multipart({'evidence': json.dumps(evidence, ensure_ascii=False)}, None if args.result_id else work / 'script.pdf')
+        sent = corrections.attach(work, evidence) if args.result_id else evidence
+        body, content_type = multipart({'evidence': json.dumps(sent, ensure_ascii=False)}, None if args.result_id else work / 'script.pdf')
         suffix = f'/results/{args.result_id}' if args.result_id else '/results'
         result = api(state['origin'], 'PUT' if args.result_id else 'POST', suffix, multipart=body, content_type=content_type)
         if not result.get('result_id'):
             raise WorkflowError('Result response lacks result_id')
         result['_evidence_sha256'] = digest(evidence)
         dump(result_path, result)
+        if args.result_id:
+            corrections.clear(work)
     paths = {}
     for label, key in (('annotated_script', 'script_download_url'), ('marking_report', 'report_download_url')):
         url = result.get(key)
@@ -463,18 +642,53 @@ def submit(args: argparse.Namespace) -> None:
                       'over_answered': bool(result.get('over_answered'))}
     if 'question_set' not in state['identity']:
         output.update(grade=result.get('grade'), grade_range=result.get('grade_range'))
+    output['check_units'] = check_units(result, work)
+    output['decide_units'] = decide_units(result, work)
     print(json.dumps(output, ensure_ascii=False))
+
+
+def _first_page(unit: dict, mapping: object) -> int | None:
+    pages = mapping.get(str(unit.get('question_number'))) if isinstance(mapping, dict) else None
+    return unit.get('page') or (pages[0] if isinstance(pages, list) and pages else None)
+
+
+def _page_map(work: Path) -> object:
+    try:
+        return read(work / 'page-map.json') if (work / 'page-map.json').is_file() else {}
+    except (ValueError, WorkflowError):
+        return {}
+
+
+def check_units(result: dict, work: Path) -> list[dict]:
+    """Parts the service says a person should check (review tier ``check``), with the page to open."""
+    mapping = _page_map(work)
+    return [{'label': unit.get('label'), 'page': _first_page(unit, mapping)}
+            for unit in result.get('units') or [] if (unit.get('review') or {}).get('tier') == 'check']
+
+
+def decide_units(result: dict, work: Path) -> list[dict]:
+    """The rows of the review note (tier ``check`` or ``glance``), numbered as the note numbers them."""
+    mapping = _page_map(work)
+    listed = [unit for unit in result.get('units') or [] if review_detail.listed(unit)]
+    return [{'number': review_detail.circled(index), 'label': unit.get('label'), 'page': _first_page(unit, mapping)}
+            for index, unit in enumerate(listed, start=1)]
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subs = parser.add_subparsers(dest='command', required=True)
+    begin = subs.add_parser('start')
+    begin.add_argument('--script', required=True)
+    begin.add_argument('--run-dir')
     prep = subs.add_parser('prepare')
     prep.add_argument('--work-dir', required=True)
     prep.add_argument('--script', required=True)
     source = prep.add_mutually_exclusive_group(required=True)
+    source.add_argument('--paper-ref')
     source.add_argument('--paper-json')
     source.add_argument('--question-ids-json')
+    prep.add_argument('--series')
+    prep.add_argument('--board', choices=('edexcel', 'caie'))
     prep.add_argument('--lang', choices=('zh', 'en'), required=True)
     one = subs.add_parser('question')
     one.add_argument('--work-dir', required=True)
@@ -483,20 +697,26 @@ def main() -> int:
     many = subs.add_parser('batch')
     many.add_argument('--work-dir', required=True)
     many.add_argument('--numbers', required=True)
-    many.add_argument('--pages-map', required=True)
+    many.add_argument('--pages-map')
     crops = subs.add_parser('crop')
     crops.add_argument('--work-dir', required=True)
-    crops.add_argument('--regions-json', required=True)
+    boxes = crops.add_mutually_exclusive_group(required=True)
+    boxes.add_argument('--regions')
+    boxes.add_argument('--regions-json')
     chk = subs.add_parser('check')
     chk.add_argument('--work-dir', required=True)
     send = subs.add_parser('submit')
     send.add_argument('--work-dir', required=True)
     send.add_argument('--reviewed', action='store_true')
     send.add_argument('--result-id')
+    fix = subs.add_parser('correct')
+    fix.add_argument('--work-dir', required=True)
+    fix.add_argument('--label', required=True)
+    fix.add_argument('--marks', type=int, required=True)
     args = parser.parse_args()
     try:
-        {'prepare': prepare, 'question': question, 'batch': batch, 'crop': crop,
-         'check': check, 'submit': submit}[args.command](args)
+        {'start': start, 'prepare': prepare, 'question': question, 'batch': batch, 'crop': crop,
+         'check': check, 'submit': submit, 'correct': correct}[args.command](args)
         return 0
     except (WorkflowError, OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         print(f'Workflow error: {exc}', file=sys.stderr)
