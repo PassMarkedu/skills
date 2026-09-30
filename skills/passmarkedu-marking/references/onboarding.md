@@ -27,4 +27,4 @@ Read this after successfully installing the skill, or when the user asks to star
 
 仅支持已收录并开放批改的官方真题及配套评分标准，具体年份与覆盖范围见[常见问题](<base>/marking-kit#faq)。
 
-免费账号可批改 1 份试卷，订阅后不限次。对判分有异议，可以直接在对话中提出并重新生成结果。
+免费账号可批 1 份整卷和 5 道单题（拍照或拼题卷按题计），订阅后不限次。对判分有异议，可以直接在对话中提出并重新生成结果。

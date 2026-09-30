@@ -15,10 +15,13 @@ import tempfile
 from pathlib import Path
 
 from common import WorkflowError
+from rendering import page_count, render_jpeg
 
 IMAGE_SUFFIXES = ('.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp')
 PRODUCER = b'PassMarkedu photos'
 LONG_SIDE_PT = 842  # each page is A4-sized on its long side, so page renders match a scanned sheet
+UPLOAD_BUDGET = 8 * 2**20  # the site takes 10 MB per request; the evidence goes in the same one
+COMPACT_EDGES = (2200, 1800, 1500)  # page long side in pixels; 1500 still reads handwriting
 _FRAMES = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
 _SPACES = {1: '/DeviceGray', 3: '/DeviceRGB', 4: '/DeviceCMYK'}
 _IMAGE = re.compile(rb'/Subtype/Image/Width \d+/Height \d+/ColorSpace/\w+/BitsPerComponent 8(?:/Decode\[[\d ]+\])?'
@@ -176,6 +179,32 @@ def as_jpeg(path: Path) -> bytes:
         return converted
     raise WorkflowError(f'{path.name}: this computer cannot convert {path.suffix or "this"} photos (that needs PyMuPDF or macOS). '
                         'JPEG photos (.jpg, .jpeg) and PDF scans work everywhere: send the pages in one of those.')
+
+
+def compact(script: Path) -> None:
+    """Make the run's copy of a scan small enough to upload, one JPEG per page, before any page is rendered.
+
+    Phone scans run to tens of MB and the site takes at most 10 MB per request, so a big one would be
+    refused only at submit, after all the marking. Too big even so: stop now, before any marking."""
+    size = script.stat().st_size
+    if size <= UPLOAD_BUDGET:
+        return
+    count = page_count(script)
+    with tempfile.TemporaryDirectory() as folder:
+        for edge in COMPACT_EDGES:
+            pages = []
+            for page in range(1, (count or 0) + 1):
+                target = Path(folder) / f'{page}.jpg'
+                if not render_jpeg(script, page, edge, target):
+                    break
+                pages.append(target.read_bytes())
+            else:
+                data = build_pdf(pages)
+                if pages and len(data) <= UPLOAD_BUDGET:
+                    script.write_bytes(data)
+                    return
+    raise WorkflowError(f'The script is {size / 2**20:.0f} MB and could not be made smaller than '
+                        f'{UPLOAD_BUDGET // 2**20} MB here; export a smaller scan (fewer pixels or JPEG) and start again')
 
 
 def shrink(jpeg: bytes, long_edge: int) -> bytes | None:

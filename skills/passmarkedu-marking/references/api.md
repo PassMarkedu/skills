@@ -28,12 +28,13 @@ qp_pdf_url       official question paper PDF (for data/diagrams the script does 
 subject          e.g. maths, further-maths, physics, chemistry, economics, accounting (mixed sets: per question)
 grade_boundaries {series, raw_max_mark, thresholds:[{grade, mark}], official_url} or null
 scheme_revision  SHA-256 of the normalized scoring rules and grade thresholds
-usage            {is_premium, free_papers_total, free_papers_used, free_papers_remaining, subscribe_url}
+usage            {is_premium, free_papers_total, free_papers_used, free_papers_remaining,
+                  free_questions_total, free_questions_used, free_questions_remaining, subscribe_url}
 ```
 
 `paper.unsupported[]` (`{label, marks}`) lists parts with no structured mark scheme yet: announce them before marking and leave them out.
 
-Errors: 400 bad cover values; 404 no such paper, or `detail` starting `paper_not_supported` when no part of the paper can be auto-marked (nothing is charged); 429 `{"error": {"code": "quota_exceeded", "meter": "marking_papers", ...}}` → free credit used up, point the user to `usage.subscribe_url` / `<base>/pricing`.
+Errors: 400 bad cover values; 404 no such paper, or `detail` starting `paper_not_supported` when no part of the paper can be auto-marked (nothing is charged); 429 `{"error": {"code": "quota_exceeded", "meter": "marking_papers", ...}}` → the free whole paper is used up, point the user to `usage.subscribe_url` / `<base>/pricing`. Free accounts get 1 whole paper and 5 single questions; subscribers have `free_*` totals of null (unlimited).
 
 ## Mixed questions (§546)
 
@@ -41,9 +42,9 @@ Errors: 400 bad cover values; 404 no such paper, or `detail` starting `paper_not
 |---|---|---|
 | `POST /identify` | `{"items":[{"key","locator"?,"text"?}], "scope"?:[course keys]}` (≤40 items) | `{"items":[{"key","matched_by":"locator"\|"text"\|"none","candidates":[{question_id, board, unit_code, year, session, paper_number, question_number, course_key, match, preview}]}]}` — no charge |
 | `POST /identify-photo` | `{"image_base64","mime_type"}` (one page or question, ≤8 MB) | `{"matched_by","extracted_text","candidates":[…]}` — daily cap per account; 429 `marking_kit_photo_daily_limit` |
-| `POST /question-sets` | `{"question_ids":[…], "parts"?:{"<id>":["a","c(ii)"]}}` (≤20, script order) | checklist like `/papers` but `question_set` instead of `paper`, `questions[].source`, folded `grade_boundaries`; charges one paper credit per distinct set of ids |
+| `POST /question-sets` | `{"question_ids":[…], "parts"?:{"<id>":["a","c(ii)"]}}` (≤20, script order) | checklist like `/papers` but `question_set` instead of `paper`, `questions[].source`, folded `grade_boundaries`; charges one question credit per question id not charged before (all or nothing); 429 meter `marking_questions` when the new ids need more than `quota.remaining` |
 
-`parts` (optional) lists the sub-parts printed on the script for a question that is only partly included; a question id absent from `parts` is marked whole. A label selects every step at or below it (`"c"` = c, c(i), c(ii); `"c(ii)"`, `"c.ii"` or `"cii"` = c(ii) only). The checklist then holds only those parts, its `max_marks`, question `marks` and folded grade lines count only them, and `question_set.parts` is echoed back. A label matching no part of that question, or an id not in `question_ids`, is 400. Send the same `question_set` object (with `parts`) in `/score` and `/results` evidence; changing `parts` for the same ids is not charged again.
+`parts` (optional) lists the sub-parts printed on the script for a question that is only partly included; a question id absent from `parts` is marked whole. A label selects every step at or below it (`"c"` = c, c(i), c(ii); `"c(ii)"`, `"c.ii"` or `"cii"` = c(ii) only). The checklist then holds only those parts, its `max_marks`, question `marks` and folded grade lines count only them, and `question_set.parts` is echoed back. A label matching no part of that question, or an id not in `question_ids`, is 400. Send the same `question_set` object (with `parts`) in `/score` and `/results` evidence; re-fetching ids already charged, or changing their `parts`, is not charged again.
 
 ## Dry run
 
@@ -66,7 +67,7 @@ Result: `{result_id, paper, total, max_total, grade, grade_range, grade_boundari
 
 - `max_total` is the paper's official maximum (the grade table's raw maximum when optional questions make the question marks add up to more). `not_chosen[]`: optional questions left blank, not in `max_total`. `over_answered`: more optional questions answered than allowed — no grade is given; which count is the board's rule.
 
-- Both PDFs are regenerated on correction, keeping the original expiry and paper credit. `report_download_url` is null for older results that have not yet been regenerated into two documents. Present mixed-question results as score/maximum only, even if legacy scoring fields include a folded grade.
+- Both PDFs are regenerated on correction, keeping the original expiry and credit. `report_download_url` is null for older results that have not yet been regenerated into two documents. Present mixed-question results as score/maximum only, even if legacy scoring fields include a folded grade.
 - `unsupported[]`: `{label, marks}` — parts with no structured mark scheme; not marked, not in `total`. `max_total` is the whole paper; the marked part is `max_total` minus their marks.
 - `grade_range`: `[low, high]` when the unsupported marks could change the grade (then `grade` is null); otherwise `grade` is set and `grade_range` is null.
 - `review_items[]`: `{label, page, reasons[], notes[], final_answer, scheme_conflict}` — what to check before passing the PDF on; `notes` are ready-to-say sentences in the result's language. Say them in the chat; they are never printed on the PDF.

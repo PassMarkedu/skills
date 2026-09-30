@@ -2,8 +2,14 @@
 name: passmarkedu-marking
 description: Mark a candidate's scanned CAIE (Cambridge International AS & A Level) or Pearson Edexcel IAL exam script against the official mark scheme, point by point, and return an annotated-script PDF and a separate marking-report PDF with explanations and official mark-scheme pages. Use after installing this skill to welcome the user and connect their account, when a user uploads a scanned exam paper (PDF or photos) and asks to mark / grade / 判分 / 批改 / 阅卷 it, or asks to change a mark on a paper this skill already marked.
 metadata:
-  version: 1.10.3
+  version: 1.10.6
 ---
+
+<!-- Overview for people browsing the skill (e.g. on SkillHub). Not instructions: the rules start at the heading below. -->
+
+> **PassMarkedu A-level 阅卷**：把 A-level / IAL 真题答卷交给 AI，按 Pearson Edexcel 与 Cambridge（CAIE）官方评分标准逐个得分点批改，拿回三份 PDF——批改答卷（红笔标分和得分码）、阅卷结果（失分原因、正确做法、官方评分标准原页）、复核说明（只列 AI 拿不准的几处，由你来定）。
+>
+> 整卷、拼题卷、随手拍的一道题都能批；回一句「第 N 处改成 X 分」即可改分，三份 PDF 一起更新。支持 Edexcel IAL 与 CAIE AS & A Level 的数学、进阶数学、物理、化学、经济、会计等科目。安装后按提示连接 PassMarkedu A-level 账号（passmarkedu.com），免费账号可批 1 份整卷和 5 道单题（拍照或拼题卷按题计），订阅后不限次数。
 
 # PassMarkedu A-level 阅卷 Skill
 
@@ -66,7 +72,7 @@ Run `scripts/workflow.py` directly for every download, rendering, crop, check an
 
 **Check the match before judging:** the checklist's number of questions and marks must match the script (cover total, printed [n] marks, question wording). If they do not, the identity is wrong — fix the reference and prepare again in a new work directory; never submit against a mismatched paper.
 
-Preparation lists each question's pages and reading tiles (when the question paper fixed the page map), the whole-page views, unassigned pages and MS images. Announce unsupported parts; they are excluded from marking rather than scored zero. On quota exhaustion give `<base>/pricing`. Keep the original page numbers, including covers, repeats and blank pages. If there is no renderer (`renderer: "none"`), use the Harness's actual PDF/image viewer.
+Preparation lists each question's pages and reading tiles (when the question paper fixed the page map), the whole-page views, unassigned pages and MS images. Announce unsupported parts; they are excluded from marking rather than scored zero. On quota exhaustion (`quota_exceeded`) say which free allowance ran out — `marking_papers` is the one whole paper; `marking_questions` is the five single questions, one per question not marked before, so a set needing more than the free ones left is refused whole — and give `<base>/pricing`. Keep the original page numbers, including covers, repeats and blank pages. If there is no renderer (`renderer: "none"`), use the Harness's actual PDF/image viewer.
 
 The work directory records the scoring-material revision. If the service reports that it changed, prepare a new run against the current material and revisit affected judgements; never silently combine old evidence with new rules.
 
@@ -75,7 +81,7 @@ The work directory records the scoring-material revision. If the service reports
 Process **two complete questions per batch** (a final single question is fine), opening up to eight images per tool round.
 
 1. First round: run `batch --numbers 1,2` and, in the same round, open those questions' tiles (paths are in the preparation output and each batch question's `tiles`) and the subject rules file named in [judging.md](references/judging.md).
-2. Judge from the tiles and the batch packet's structured MS conditions, point IDs and service rules. Open an official MS image only when the [MS checks](references/judging.md#when-to-consult-the-official-ms-image) apply; record a confirmed mismatch in `scheme_conflict`. Keep the effective answer, the working each mark needs and relevant errors or corrections in `transcript`, and judge every supported point from its actual evidence.
+2. Judge from the tiles and the batch packet's structured MS conditions, point IDs and service rules. Open an official MS image only when the [MS checks](references/judging.md#when-to-consult-the-official-ms-image) apply; record a confirmed mismatch in `scheme_conflict`. Keep the effective answer, the working each mark needs and relevant errors or corrections in `transcript` (for a part with a `level` step, the whole answer verbatim: [judging.md](references/judging.md#read-the-actual-work-first)), and judge every supported point from its actual evidence.
 3. Fill the batch's `evidence_template` units and write them as `{"units": [...]}` to its new `evidence_file`. A unit with a `visual` step has a `figure`: the drawing's page and box, as for a crop but of any size. **Write each part's explanation in the same unit, now, while its work is in front of you** ([judging.md](references/judging.md#explain-with-the-judgement), the batch output's `explain` line): `comment`, `headline`, `mistakes`, `solution` for a part that loses marks; `solution` for a blank part; `review_detail` for a part the review note will list. A full-mark part needs none. Each later round writes the finished batch's file, runs the next `batch` and opens its tiles together.
 4. Judge from the tiles. Zoom only when a mark turns on a symbol you genuinely cannot read there (a sign, a digit, a power, a deletion); otherwise judge that step with `confidence: "low"`, reason `legibility` and a one-sentence note — it goes on the review list for the person running the marking — and keep going. After the last batch, open the unassigned pages' whole-page views once; work on a spare page belongs to its question.
 5. If any mark still turns on an unreadable symbol, one `crop` call for those doubts, then patch the evidence. A paper has **at most 4 zoom regions in all**; `crop` refuses beyond that, and a doubt it refuses stays low-confidence. A doubt still unreadable after one correctly located crop stays low-confidence; fix a misplaced box instead of enlarging again.
@@ -104,6 +110,6 @@ Reply from the actual server result, following the review note: total/marked max
 
 ## 6. Corrections
 
-If the user states the mark a part should receive, find the part: 「第 N 处改成 X 分」 (English: "change #N to X marks") names the Nth entry of `submit`'s `decide_units` (the older 「② 改成 3 分」 names entry ②); a part label, as in 「5(b) 改成 3 分」, names that part. A bare number without 第/处/# (「5 改成 3 分」) is a question or part label, never an entry number; if the reply could mean either, ask. Then run `correct --work-dir <run_dir> --label "3(c)" --marks 1` for that part; it records the request, and the next `submit --result-id` sends it with the update. Reopen the affected question and original region, update only its judgement, then `check`. If its score changed, `check` lists it: rewrite the fields it names in that unit, then `submit --result-id` using the existing result. Both PDFs regenerate without another paper credit or extended expiry, and the copies next to the answer PDF are overwritten. `question --number N` reopens the question with its tiles. Report the changed score and remaining doubts.
+If the user states the mark a part should receive, find the part: 「第 N 处改成 X 分」 (English: "change #N to X marks") names the Nth entry of `submit`'s `decide_units` (the older 「② 改成 3 分」 names entry ②); a part label, as in 「5(b) 改成 3 分」, names that part. A bare number without 第/处/# (「5 改成 3 分」) is a question or part label, never an entry number; if the reply could mean either, ask. Then run `correct --work-dir <run_dir> --label "3(c)" --marks 1` for that part; it records the request, and the next `submit --result-id` sends it with the update. Reopen the affected question and original region, update only its judgement, then `check`. If its score changed, `check` lists it: rewrite the fields it names in that unit, then `submit --result-id` using the existing result. Both PDFs regenerate without another credit or extended expiry, and the copies next to the answer PDF are overwritten. `question --number N` reopens the question with its tiles. Report the changed score and remaining doubts.
 
 For a pre-helper result, use its original evidence with `PUT /results/<id>` as documented in [api.md](references/api.md). If that evidence is unavailable, request the original marking session or a fresh run. An expired result cannot be recovered by its old download link.

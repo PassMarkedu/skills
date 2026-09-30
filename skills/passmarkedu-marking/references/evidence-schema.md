@@ -49,7 +49,7 @@ Field rules:
 | `page` | 1-based page of the uploaded PDF where the answer starts (count every page). |
 | `y` | 0–1, how far down that page the answer starts. |
 | `figure` | Units with a `visual` step: `{"page": 3, "box": [0.2, 0.55, 0.8, 0.9]}` around the drawing (fractions of the upright page, like `crop` boxes, any size); `null` or absent when nothing was drawn. Only the review note uses it. |
-| `transcript` | Faithful mark-bearing working and relevant corrections from the unit, ≤4000 characters. Every value in `final_answer` must appear in it, or the unit is flagged for the user. |
+| `transcript` | Faithful mark-bearing working and relevant corrections from the unit, ≤4000 characters. Every value in `final_answer` must appear in it, or the unit is flagged for the user. For a part with a `level` step: the whole answer in reading order, verbatim (the candidate's wording, spelling and grammar, not corrected or summarised; `[?]` for an unreadable word, `[diagram: …]` for a diagram); the review note prints it for the teacher. |
 | `final_answer` | The last expression or statement the candidate offers that is not crossed out, exactly as written; `""` if none. Compared with the transcript and the expected answer; not printed as a separate cover-page field. |
 | `comment` | One sentence: the overall verdict, in words a candidate understands. |
 | `headline` | Units that lost marks: the main reason in ≤20 Chinese characters; included in the marking report’s main lost-point overview. |

@@ -85,6 +85,6 @@ python3 "$SKILL/scripts/workflow.py" correct --work-dir "$RUN" --label "3(c)" --
 
 `correct` checks the label against the checklist and the mark against that part's maximum, then appends the request to `RUN/corrections.json`; it changes no judgement or score. The next `submit` that updates the saved result sends the pending requests with the evidence and clears them once the update succeeds.
 
-For a correction, edit only the affected question, `check`, rewrite the explanation fields its task names, then `submit --result-id ACTUAL_UUID --reviewed`. Both files refresh; expiry and paper credit stay the same. Never overwrite other questions to change one mark.
+For a correction, edit only the affected question, `check`, rewrite the explanation fields its task names, then `submit --result-id ACTUAL_UUID --reviewed`. Both files refresh; expiry and credit stay the same. Never overwrite other questions to change one mark.
 
 The default workflow uses a single conversation with batched tool calls. Writing files checkpoints progress without clearing model context. If Python execution is unavailable, explain that the helper cannot run; the documented API/manual workflow is available only when the Harness has the required image, file and network tools, and may use more calls. Never claim a helper operation ran when it did not.

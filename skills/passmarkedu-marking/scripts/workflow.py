@@ -33,6 +33,8 @@ from rendering import (content_box, crop_dpi, crop_page, page_count, page_sizes,
 
 
 SAFE_TOKEN = re.compile(r'[A-Za-z0-9._:-]{1,80}')
+# Free allowances (§580): one whole paper, and single questions charged per new question id.
+QUOTA_METERS = {'marking_papers', 'marking_questions'}
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -92,6 +94,11 @@ def api(origin: str, method: str, suffix: str, payload: object = None, multipart
                     classification = 'scheme_dependency_unresolved; check the affected scoring unit and contact support'
                 elif exc.code == 429 and 'quota_exceeded' in (code, envelope.get('code')):
                     classification = 'quota_exceeded'
+                    meter, quota = envelope.get('meter'), envelope.get('quota')
+                    if meter in QUOTA_METERS:
+                        left = quota.get('remaining') if isinstance(quota, dict) else None
+                        known = isinstance(left, int) and not isinstance(left, bool)
+                        classification += f' ({meter}' + (f', {left} free left' if known else '') + ')'
                 elif isinstance(detail, str) and detail in identify.ERRORS:
                     classification = f'{detail}: {identify.ERRORS[detail]}'
         except (ValueError, OSError):
@@ -319,6 +326,11 @@ def prepare(args: argparse.Namespace) -> None:
     local_script = work / 'script.pdf'
     if not local_script.exists():
         shutil.copyfile(script, local_script)
+        try:
+            photos.compact(local_script)
+        except WorkflowError:
+            local_script.unlink()
+            raise
     numbers = [str(q['number']) for q in questions]
     if len(numbers) != len(set(numbers)) or any(not re.fullmatch(r'[A-Za-z0-9._-]+', n) for n in numbers):
         raise WorkflowError('Duplicate or unsafe question number')
