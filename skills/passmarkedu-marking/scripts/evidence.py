@@ -1,15 +1,13 @@
-"""Batch packets, judgement evidence validation and report explanations."""
+"""Batch packets and judgement evidence validation."""
 from __future__ import annotations
 
 import math
 from pathlib import Path
 
 import blanks
-import review_detail
-from common import WorkflowError, digest, read
+from common import WorkflowError, read
 from rendering import validate_box
 
-AUTO_COMMENT = {'zh': '本小问全部得分。', 'en': 'Full marks for this part.'}
 # Why a step is not high confidence (judging.md, Confidence).
 STEP_REASONS = ('legibility', 'condition', 'deletion', 'alternative_method', 'follow_through', 'drawing', 'levels', 'scheme_gap')
 
@@ -77,8 +75,11 @@ def unit_files(work: Path) -> dict[str, tuple[Path, dict]]:
     return found
 
 
-def merged(work: Path, state: dict) -> dict:
-    """All judgement files as one payload; every supported unit exactly once, in checklist order."""
+def merged(work: Path, state: dict, repairs: list[str] | None = None) -> dict:
+    """All judgement files as one payload; every supported unit exactly once, in checklist order.
+
+    Type slips the helper can read without changing a judgement are repaired in the payload (never in
+    the files) and listed in ``repairs``."""
     checklist = read(work / 'checklist.json')
     supported = {}
     for q in checklist['questions']:
@@ -107,7 +108,7 @@ def merged(work: Path, state: dict) -> dict:
     page_count = len(state['pages'])
     for uid, spec in supported.items():
         name, unit = found[uid]
-        validate_unit(f'{name}: {uid}', unit, spec, page_count)
+        validate_unit(f'{name}: {uid}', unit, spec, page_count, repairs)
         all_units.append(unit)
     # A unit judged blank goes with a check of its pages against the printed booklet.
     checks = blanks.for_run(work, state, checklist['questions'], {u['unit_id']: u['attempted'] for u in all_units})
@@ -131,7 +132,16 @@ def validate_figure(uid: str, figure: object, page_count: int) -> None:
         raise WorkflowError(str(exc)) from None
 
 
-def validate_unit(uid: str, unit: dict, spec: dict, page_count: int) -> None:
+def _boolean(value: object) -> bool | None:
+    """``true``/``false`` written as text or as 1/0."""
+    if type(value) is int and value in (0, 1):
+        return bool(value)
+    text = value.strip().lower() if isinstance(value, str) else None
+    return {'true': True, 'false': False, '1': True, '0': False}.get(text) if text else None
+
+
+def validate_unit(uid: str, unit: dict, spec: dict, page_count: int, repairs: list[str] | None = None) -> None:
+    repairs = repairs if repairs is not None else []
     if unit.get('figure') is not None:
         validate_figure(uid, unit['figure'], page_count)
     attempted = unit.get('attempted')
@@ -169,7 +179,11 @@ def validate_unit(uid: str, unit: dict, spec: dict, page_count: int) -> None:
             raise WorkflowError(f'{uid}: unknown or duplicate step_id {sid}')
         seen_steps.add(sid)
         if type(step.get('present')) is not bool:
-            raise WorkflowError(f'{uid}/{sid}: present must be a JSON boolean')
+            present = _boolean(step.get('present'))
+            if present is None:
+                raise WorkflowError(f'{uid}/{sid}: present must be a JSON boolean')
+            repairs.append(f'{uid}/{sid}: present {step["present"]!r} read as {str(present).lower()}')
+            step['present'] = present
         if step.get('confidence') not in ('high', 'medium', 'low') or not isinstance(step.get('evidence'), str):
             raise WorkflowError(f'{uid}/{sid}: complete confidence and evidence')
         if step['confidence'] != 'high' and (step.get('reason') not in STEP_REASONS
@@ -178,6 +192,9 @@ def validate_unit(uid: str, unit: dict, spec: dict, page_count: int) -> None:
                                 'and a one-sentence note')
         kind_spec = scheme[sid]
         kind = kind_spec.get('type', 'point')
+        if kind == 'numeric' and type(step.get('value')) in (int, float) and math.isfinite(step['value']):
+            repairs.append(f'{uid}/{sid}: numeric value {step["value"]!r} sent as the text "{step["value"]!r}"')
+            step['value'] = repr(step['value'])
         if kind == 'numeric' and not isinstance(step.get('value'), str):
             raise WorkflowError(f'{uid}/{sid}: numeric value must be text')
         if kind == 'pick_n' and (not isinstance(step.get('matched'), list) or any(type(i) is not int for i in step['matched'])):
@@ -199,208 +216,3 @@ def validate_unit(uid: str, unit: dict, spec: dict, page_count: int) -> None:
         raise WorkflowError(f'{uid}: missing common steps {sorted(common - seen_steps)}')
     if groups and not any(route <= seen_steps for route in groups.values()):
         raise WorkflowError(f'{uid}: complete at least one alternative route')
-
-
-REPORT_FIELDS = ('comment', 'headline', 'mistakes', 'solution')
-# Neither report prose, the review note's detail, where the drawing sits, nor the helper's own
-# blank-page check is a judgement.
-NOT_JUDGEMENT = REPORT_FIELDS + ('review_detail', 'figure', 'blank_check')
-
-
-def judgement_hash(unit: dict) -> str:
-    return digest({key: value for key, value in unit.items() if key not in NOT_JUDGEMENT})
-
-
-def judging_payload(evidence: dict) -> dict:
-    return {**evidence, 'units': [{k: v for k, v in u.items() if k not in NOT_JUDGEMENT} for u in evidence['units']]}
-
-
-def unit_hashes(evidence: dict, previous: dict, now_ns: int) -> dict:
-    """Each unit's judgement hash and since when (ns) it has had that hash, carried over from the last check."""
-    out = {}
-    for unit in evidence['units']:
-        sha = judgement_hash(unit)
-        before = previous.get(unit['unit_id']) or {}
-        since = before.get('since_ns') if before.get('sha256') == sha and type(before.get('since_ns')) is int else now_ns
-        out[unit['unit_id']] = {'sha256': sha, 'since_ns': since}
-    return out
-
-
-def scored_units(work: Path, score: dict) -> dict:
-    result = {u['unit_id']: u for u in score.get('units', []) if u.get('unit_id')}
-    if result:
-        return result
-    # Older score endpoints returned ordered units without their IDs.
-    specs = [u for q in read(work / 'checklist.json')['questions'] for u in q['scoring_units']]
-    if len(specs) == len(score.get('units', [])):
-        return {spec['unit_id']: item for spec, item in zip(specs, score['units']) if spec.get('supported')}
-    return result
-
-
-def with_reports(work: Path, evidence: dict, *, require_complete: bool, page_count: int = 0) -> dict:
-    checklist = read(work / 'checklist.json')
-    by_id = {u['unit_id']: u for u in evidence['units']}
-    checked_units = (read(work / 'check.json').get('units') or {}) if (work / 'check.json').is_file() else {}
-    score = read(work / 'score.json')
-    scores = scored_units(work, score)
-    for question in checklist['questions']:
-        number = str(question['number'])
-        path = work / 'reports' / f'{number}.json'
-        if not path.exists():
-            continue
-        report = read(path)
-        units = report.get('units')
-        if not isinstance(units, list):
-            raise WorkflowError(f'Question {number}: report units must be a list')
-        allowed = {u['unit_id'] for u in question['scoring_units'] if u.get('supported')}
-        seen = set()
-        for entry in units:
-            if not isinstance(entry, dict) or entry.get('unit_id') not in allowed or entry['unit_id'] in seen:
-                raise WorkflowError(f'Question {number}: unknown or duplicate report unit_id')
-            uid = entry['unit_id']
-            seen.add(uid)
-            current = judgement_hash(by_id[uid])
-            if 'judgement_sha256' not in entry or entry['judgement_sha256'] is None:
-                # No hash to copy: the report belongs to the judgement it was written after.
-                record = checked_units.get(uid) if isinstance(checked_units.get(uid), dict) else {}
-                written_after = type(record.get('since_ns')) is int and path.stat().st_mtime_ns >= record['since_ns']
-                if record.get('sha256') != current or not written_after:
-                    raise WorkflowError(f'Question {number}/{uid}: report stale, written before the latest judgement change; '
-                                        'rerun check and update this explanation')
-            elif entry['judgement_sha256'] != current:
-                raise WorkflowError(f'Question {number}/{uid}: report judgement_sha256 stale; rerun check and update this explanation')
-            for field in REPORT_FIELDS:
-                if field in entry:
-                    if field in ('mistakes', 'solution'):
-                        if not isinstance(entry[field], list):
-                            raise WorkflowError(f'Question {number}/{uid}: report {field} must be a list')
-                    elif not isinstance(entry[field], str):
-                        raise WorkflowError(f'Question {number}/{uid}: report {field} must be text')
-                    by_id[uid][field] = entry[field]
-            if 'review_detail' in entry and review_detail.listed(scores.get(uid, {})):
-                by_id[uid]['review_detail'] = entry['review_detail']  # only the review note reads it
-    if require_complete:
-        for question in checklist['questions']:
-            number = str(question['number'])
-            for spec in question['scoring_units']:
-                if not spec.get('supported'):
-                    continue
-                uid = spec['unit_id']
-                unit = by_id[uid]
-                awarded = scores.get(uid, {}).get('awarded')
-                max_marks = scores.get(uid, {}).get('max_marks', spec.get('marks'))
-                if awarded is None:
-                    raise WorkflowError(f'Question {number}/{uid}: score lacks unit marks; rerun check')
-                if unit['attempted'] and awarded >= max_marks and not (isinstance(unit.get('comment'), str) and unit['comment'].strip()):
-                    unit['comment'] = AUTO_COMMENT.get(evidence.get('lang'), AUTO_COMMENT['en'])
-                needs = report_needs(unit, awarded, max_marks, scores[uid].get('steps', []), review_detail.listed(scores[uid]))
-                for field in needs:
-                    value = unit.get(field)
-                    if field == 'review_detail':
-                        try:
-                            review_detail.validate(value, scores[uid], page_count)
-                        except WorkflowError as exc:
-                            raise WorkflowError(f'Question {number}/{uid}: report {exc}') from None
-                        continue
-                    if field in ('comment', 'headline'):
-                        valid = isinstance(value, str) and bool(value.strip())
-                    elif field == 'solution':
-                        valid = isinstance(value, list) and bool(value) and all(isinstance(x, str) and x.strip() for x in value)
-                    else:
-                        valid = isinstance(value, list) and bool(value) and all(isinstance(x, dict) and all(isinstance(x.get(k), str) and x[k].strip() for k in ('wrote', 'why', 'should')) for x in value)
-                    if not valid:
-                        raise WorkflowError(f'Question {number}/{uid}: report {field} required after scoring')
-    return evidence
-
-
-def report_needs(unit: dict, awarded: int, max_marks: int, scored_steps: list[dict], listed: bool = False) -> list[str]:
-    """The report fields a unit needs; a part the review note lists also needs its `review_detail`."""
-    detail = ['review_detail'] if listed else []
-    if not unit['attempted']:
-        return ['solution'] + detail
-    if awarded < max_marks:
-        losses = [s for s in scored_steps if s.get('status') != 'not_in_chosen_route'
-                  and (s.get('awarded') or 0) < (s.get('step_marks') or 0)]
-        if losses and all(s.get('confidence') == 'low' for s in losses):
-            return ['comment', 'solution'] + detail
-        return ['comment', 'headline', 'mistakes', 'solution'] + detail
-    return detail  # full marks: submit adds the fixed comment
-
-
-def explanation_tasks(work: Path, evidence: dict, score: dict) -> tuple[list[dict], int]:
-    """Report tasks for lost marks and blanks, and the number of full-mark units that need none."""
-    scored = scored_units(work, score)
-    specs = {}
-    for q in read(work / 'checklist.json')['questions']:
-        for u in q['scoring_units']:
-            if u.get('supported'):
-                specs[u['unit_id']] = (str(q['number']), u)
-    output = []
-    automatic = 0
-    for unit in evidence['units']:
-        uid = unit['unit_id']
-        number, spec = specs[uid]
-        scored_unit = scored.get(uid, {})
-        awarded = scored_unit.get('awarded')
-        maximum = scored_unit.get('max_marks', spec.get('marks'))
-        if awarded is None:
-            continue
-        listed = review_detail.listed(scored_unit)
-        if unit['attempted'] and awarded >= maximum:
-            automatic += 1
-            if not listed:
-                continue
-        scored_steps = scored_unit.get('steps', [])
-        # A listed part's steps carry their mark-scheme wording, for the review_detail quote.
-        keys = ('step_id', 'mark_code', 'awarded', 'step_marks', 'status', 'confidence', 'evidence') + (('description',) if listed else ())
-        task = {'unit_id': uid, 'question': number, 'label': spec.get('label'),
-                'awarded': awarded, 'max_marks': maximum, 'attempted': unit['attempted'],
-                'needs': report_needs(unit, awarded, maximum, scored_steps, listed),
-                'judgement_sha256': judgement_hash(unit),
-                'report_file': str(work / 'reports' / f'{number}.json'),
-                'transcript': unit.get('transcript'), 'final_answer': unit.get('final_answer'),
-                'scored_steps': [{k: step.get(k) for k in keys} for step in scored_steps]}
-        if listed:
-            task.update(page=unit.get('page'), review_reasons=(scored_unit.get('review') or {}).get('reasons') or [])
-        output.append(task)
-    return output, automatic
-
-
-def score_summary(score: dict, work: Path | None = None, evidence: dict | None = None) -> dict:
-    locations = {}
-    if work is not None:
-        files = unit_files(work)
-        for question in read(work / 'checklist.json')['questions']:
-            number = str(question['number'])
-            for unit in question['scoring_units']:
-                path, found = files.get(unit['unit_id'], (None, {}))
-                locations[unit['unit_id']] = {'question': number, 'page': found.get('page'),
-                                               'evidence_file': str(path) if path else None}
-    totals = {}
-    for unit in score.get('units', []):
-        if unit.get('status') == 'unsupported':
-            continue
-        number = str(unit.get('question_number', '?'))
-        item = totals.setdefault(number, {'awarded': 0, 'max_marks': 0})
-        item['awarded'] += unit.get('awarded') or 0
-        item['max_marks'] += unit.get('max_marks') or 0
-    tasks, automatic = explanation_tasks(work, evidence, score) if work and evidence else ([], 0)
-    return {'total': score.get('total'), 'max_total': score.get('max_total'),
-            'grade': score.get('grade'), 'grade_range': score.get('grade_range'),
-            'marked_max_total': sum(item['max_marks'] for item in totals.values()),
-            'unsupported': score.get('unsupported') or [], 'questions': totals,
-            'reliability': score.get('reliability'),
-            'review_items': [{k: x.get(k) for k in ('label', 'page', 'reasons', 'notes', 'final_answer', 'scheme_conflict')} for x in score.get('review_items', [])],
-            'recheck': [{**locations.get(x.get('unit_id'), {}), **{k: x.get(k) for k in ('unit_id', 'label', 'step_id', 'mark_code', 'reasons', 'check')}} for x in score.get('recheck', [])],
-            'score_path': str(work / 'score.json') if work else 'score.json',
-            'explanation_tasks': tasks, 'auto_comment_units': automatic}
-
-
-def compact_summary(summary: dict, work: Path) -> dict:
-    path = str(work / 'check-summary.json')
-    fields = ('unit_id', 'question', 'label', 'awarded', 'max_marks', 'needs',
-              'judgement_sha256', 'report_file')
-    return {**{key: value for key, value in summary.items() if key != 'explanation_tasks'},
-            'summary_path': path, 'explanation_details_path': path,
-            'explanation_tasks': [{key: task.get(key) for key in fields}
-                                  for task in summary.get('explanation_tasks', [])]}

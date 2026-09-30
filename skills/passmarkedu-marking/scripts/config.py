@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -40,6 +41,16 @@ def normalize_origin(value: str) -> str:
         host = f"[{host}]"
     port = f":{parsed_port}" if parsed_port is not None else ""
     return f"{parsed.scheme.lower()}://{host}{port}"
+
+
+def skill_version() -> str:
+    """``VERSION``, else ``metadata: version`` in SKILL.md: SkillHub packages drop files without an extension."""
+    version = SKILL_DIR / "VERSION"
+    if version.is_file():
+        return version.read_text(encoding="utf-8").strip()
+    front = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8").split("\n---", 1)[0]
+    found = re.search(r"^[ \t]+version:[ \t]*[\"']?([0-9][0-9A-Za-z.+-]*)", front, re.M)
+    return found.group(1) if found else ""
 
 
 def resolve_origin() -> str:

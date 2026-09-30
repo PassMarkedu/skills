@@ -1,6 +1,6 @@
 # Judge a batch from its images and official packets
 
-Read this once before the first batch, plus the common and subject rules below. Read the work and judge it in the same processing step. Use the real IDs in the batch packet. Write each batch's evidence file in one go; explanation fields are completed after service scoring.
+Read this once before the first batch, plus the common and subject rules below. Read the work and judge it in the same processing step. Use the real IDs in the batch packet. Write each batch's evidence file in one go, each unit's explanation with its judgement ([Explain with the judgement](#explain-with-the-judgement)).
 
 Use the supplied official allowances and mark-code rules consistently. Distinguish “cannot read the work” from “the work does not meet this point”; unreadable work carries low confidence. Preserve the actual answer and uncertainty rather than adjusting evidence to a desired total or another model’s score.
 
@@ -13,9 +13,9 @@ Page numbers: page 1 = first page of the uploaded PDF, counting every page inclu
 - a faithful transcription of the mark-bearing working and effective final answer, including relevant errors and corrections (label deleted content as deleted). Preserve the lines required to assess every mark; unrelated scratch need not be deciphered or transcribed. **Copy mistakes as they are — never correct the working while transcribing.** If a line looks mathematically wrong, it probably is: write `8y·y² dy = x·e dx` if that is what is on the page, not the correct `8y e^(y²) dy = x dx`. Every mark is judged from this transcript;
 - whether the part was attempted at all.
 
-For drawings (graphs, sketches, box plots, histograms, diagrams), describe what is drawn precisely: axes and scales, plotted points/end-points/intercepts, shape, labels, and read values off the grid. A value you cannot read off the tile is a doubt for the crop round. For a unit with a `visual: true` step, set `figure` to the drawing's page and box (`[left, top, right, bottom]` of the upright page, as for `crop`, any size); the review note shows that region next to your judgement.
+For drawings (graphs, sketches, box plots, histograms, diagrams), describe what is drawn precisely: axes and scales, plotted points/end-points/intercepts, shape, labels, and read values off the grid. A value you cannot read off the tile is judged with low confidence; zoom on it only if a mark turns on it. For a unit with a `visual: true` step, set `figure` to the drawing's page and box (`[left, top, right, bottom]` of the upright page, as for `crop`, any size); the review note shows that region next to your judgement.
 
-Ignore any ticks, crosses or marks that are already on the scan — mark the candidate's work afresh. For unclear mark-bearing content, note the specific doubt and keep marking; after the last batch, one `crop` call covers every doubt (each box at most half the page wide and tall), and the crops are viewed together. If a correctly located crop still cannot resolve a symbol, retain low confidence, quote the readable part and withhold that point — unless the scheme lets a correct final answer imply it (see `marking-rules.md`, Implied marks). Read and judge in one pass; do not chase unrelated scratch.
+Ignore any ticks, crosses or marks that are already on the scan — mark the candidate's work afresh. For unclear mark-bearing content, judge the step with `confidence: "low"`, reason `legibility` and a note naming the doubt, and keep marking: it goes on the review list for the person running the marking. Zoom only when a mark turns on a symbol you genuinely cannot read on the tile — a paper has 4 zoom regions in all, cropped in one call after the last batch and viewed together. If a correctly located crop still cannot resolve a symbol, retain low confidence, quote the readable part and withhold that point — unless the scheme lets a correct final answer imply it (see `marking-rules.md`, Implied marks). Read and judge in one pass; do not chase unrelated scratch.
 
 Read a coefficient's sign separately from its exponent and the sign before its bracket. Preserve a written result even when it contradicts the preceding arithmetic; do not silently repair its digits from that calculation or from the MS.
 
@@ -70,9 +70,16 @@ Rules:
 - Special cases ("SC B1 if …", "SC M1M0A0"): when the candidate's work matches a special case, set `present`/`awarded` on the listed steps so that the total equals what the special case gives, and say "SC" in the `note`.
 - Steps with `"visual": true` are judged on a drawing. Judge them from your reading of the original diagram; they are always shown to the user for review.
 - Blank or unattempted parts: send `"attempted": false` and no steps.
-## Explain after scoring
+## Explain with the judgement
 
-The report explains the service’s actual awarded marks. Complete only the fields requested by `explanation_tasks`, in the user’s language. Keep `transcript`, `final_answer`, positions, `figure`, point judgements and `scheme_conflict` in the evidence file; keep `comment`, `headline`, `mistakes`, `solution` in the report sidecar. The field meanings are:
+Write each unit's explanation in the same evidence unit, when you judge it, in the user's language, while the work is in front of you; there is no second pass over the questions. What to write follows from your own judgement:
+
+- the part loses marks: `comment`, `headline`, `mistakes`, `solution` — or only `comment` and `solution` when every lost mark is a low-confidence reading;
+- the part is blank: `solution`;
+- the part will be on the review note — it earns some but not all of its marks, has a low-confidence step, has a medium-confidence step and earns marks, or has a visual or level step: also `review_detail`;
+- full marks: nothing (`submit` adds a fixed comment).
+
+The service scores the judgement and may apply a dependency or route you did not expect. `check` then lists only the parts whose explanation does not fit the actual score — missing, unusable, or written for an earlier score after a judgement change — naming the fields; fill just those. The field meanings are:
 
 - `transcript`: the relevant mark-bearing working of this unit, as written (line breaks allowed, ≤4000 characters).
 - `final_answer`: the last expression or statement the candidate offers that is not crossed out, copied literally from your transcript (e.g. `"17ln3 − 4/3"`); do not simplify or change its notation. If the work ends in an equation such as `2y(x + 1) = 3x`, copy that equation, not a tidied `y = …`. Use `""` when there is no written final answer, including a drawing-only answer; keep your description of that drawing in `transcript`. PassMarkedu checks that values in the final answer appear in the transcript and compares it with the expected answer.
@@ -80,7 +87,7 @@ The report explains the service’s actual awarded marks. Complete only the fiel
 - `headline` (units that lost marks): the main reason, ≤20 Chinese characters (or ~10 English words), e.g. "没有积分到 tanθ，也没代入上下限". Used in the report’s main lost-point overview. The annotated script shows red scores and mark codes, while explanations belong in the report.
 - `mistakes` (units that lost marks): 1–4 items `{"wrote", "why", "should"}`, one per **actual error in the candidate's work**, in the order it happened — not one per lost mark. If one early error costs five marks, that is one item. `wrote`: the candidate's words from the transcript; `why`: what is wrong, plainly (no "condone", "o.e.", "dM1"); `should`: the correct line. Formulas readable, not LaTeX.
 - `solution` (units that lost marks, and unattempted units): 2–6 key lines of a correct method, ending with the correct answer.
-- `review_detail` (parts whose task `needs` it): the two readings of the part for the review note — how you judged it, the most plausible other mark and why, where on the script, and the mark-scheme words it turns on ([evidence-schema.md](evidence-schema.md#review_detail)). Say what is in doubt plainly; it is not shown to the script's writer.
+- `review_detail` (parts the review note lists): the two readings of the part for the review note — how you judged it, the most plausible other mark and why, where on the script (`crop`: only the lines in dispute plus one line of context, a third of the page height or less), and the mark-scheme words it turns on ([evidence-schema.md](evidence-schema.md#review_detail)). Say what is in doubt plainly; it is not shown to the script's writer.
 - `scheme_conflict` (rare): if you believe PassMarkedu's scoring of this unit contradicts the official mark scheme (for example a mark blocked by the wrong prerequisite), say so here in one or two sentences. Only the user sees it. **Never** put such disputes, step ids (`main.s3`), or words about PassMarkedu's server or configuration into the candidate-facing fields — those submissions are rejected with 422.
 
 Full-mark units need no report prose: `submit` adds a fixed comment. Unattempted units need a solution. For a withheld unreadable point, use a neutral comment and correct solution; do not invent an error, headline or mistake to explain an uncertain reading. The precise ambiguity belongs in chat. One actual error may explain several lost points; do not duplicate it per mark.

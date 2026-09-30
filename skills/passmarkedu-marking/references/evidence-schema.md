@@ -1,6 +1,6 @@
 # Evidence JSON
 
-In workflow 1.10, `batch` prints real-ID templates; write each batch's completed units to its new `evidence/batch-*.json` file (every supported unit in exactly one evidence file). `check` accepts judgement evidence before report prose is written. After scoring, put `comment`, `headline`, `mistakes`, `solution` and, for parts the review note lists, `review_detail` in `reports/<number>.json`; full-mark units get a fixed comment at submit instead. The helper merges them into the payload below; older inline explanations remain accepted. Keep `transcript`, `final_answer`, positions, `figure`, point judgements and `scheme_conflict` in the evidence file.
+In workflow 1.10.1, `batch` prints real-ID templates; write each batch's completed units to its new `evidence/batch-*.json` file (every supported unit in exactly one evidence file). Each unit holds its judgement — `transcript`, `final_answer`, positions, `figure`, point judgements, `scheme_conflict` — and, written at the same time, its explanation: `comment`, `headline`, `mistakes`, `solution` for a part that loses marks or is blank, and `review_detail` for a part the review note will list. `check` scores the judgement and then asks only for the explanation fields the actual score still needs; full-mark units get a fixed comment at submit. `reports/<number>.json` sidecars from earlier helpers are still merged in. The helper sends the payload below.
 
 When present, top-level `scheme_revision` is the opaque revision supplied by preparation; a different current revision is rejected with `409 scheme_changed`.
 
@@ -70,7 +70,7 @@ Field rules:
 
 ## review_detail
 
-Written in the report sidecar for each part whose explanation task `needs` it (the parts the review note lists). Only the review note, for the person running the marking, reads it; it never changes a mark.
+Written in the evidence unit, with the judgement, for each part the review note will list: it earns some but not all of its marks, has a low-confidence step, has a medium-confidence step and earns marks, or has a visual or level step. `check` asks for it on any other part the note lists. Only the review note, for the person running the marking, reads it; it never changes a mark. `alt_marks` must differ from the mark the service awards: if it does not, `check` names the field to fix.
 
 ```json
 "review_detail": {
@@ -78,7 +78,6 @@ Written in the report sidecar for each part whose explanation task `needs` it (t
   "alt_marks": 4,
   "alt_view": "a = 0 只是解方程的一步，答案只写了 −4.8",
   "crop": {"page": 6, "box": [0.55, 0.64, 0.79, 0.71]},
-  "circles": [{"page": 6, "box": [0.61, 0.67, 0.68, 0.69]}],
   "ms_quote": {"step_id": "b.s4", "text": "… If $a = 0$ is also given and not rejected, score A0", "underline": ["not rejected, score A0"], "page": 17}
 }
 ```
@@ -88,6 +87,7 @@ Written in the report sidecar for each part whose explanation task `needs` it (t
 | `ai_view` | One sentence (≤120 characters) in the user's language: how the awarded mark was judged. |
 | `alt_marks` | The most plausible other mark for the part: an integer 0..max, not the awarded mark. |
 | `alt_view` | One sentence (≤120 characters): the reading that gives `alt_marks`. |
-| `crop` | The decisive lines on the original page: `{page, box}`, box as for `crop` (fractions of the upright page). |
-| `circles` | 1–6 `{page, box}` around the exact thing in doubt, on the crop's page and inside the crop. |
-| `ms_quote` | `step_id`: the step the decision turns on (from the task's `scored_steps`); `text`: copied from that step's `description` (spacing and LaTeX markup aside; "…" may stand for words left out, pieces in order), ≤300 characters; `underline`: 1–6 key phrases copied from `text`; `page`: the mark-scheme page, when known. |
+| `crop` | The decisive lines on the original page: `{page, box}`, box as for `crop` (fractions of the upright page). Frame only the lines in dispute plus one line of context — normally a third of the page height or less, never the whole answer space: the note shows the crop near life size, so a tall one adds pages. |
+| `ms_quote` | `step_id`: the step the decision turns on (from the batch's `units[].steps`); `text`: copied from that step's `description` (spacing, punctuation and LaTeX markup aside; "…" may stand for words left out, pieces in order), ≤300 characters; `underline`: 1–6 key phrases copied from `text`; `page`: the mark-scheme page, when known. |
+
+The views, `alt_marks` and the quote carry the decision: `submit` refuses them when unusable, naming the field. `crop`, `underline` and `page` only place things on the note: an unusable one is left out and listed under `repairs`.

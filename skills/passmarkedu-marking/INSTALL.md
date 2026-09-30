@@ -1,12 +1,12 @@
-# 安装 PassMarked A-level 阅卷 Skill
+# 安装 PassMarkedu A-level 阅卷 Skill
 
-基于 [PassMarked A-level](https://passmarkedu.com) 的官方真题与评分标准服务，在你使用的 AI 应用中批改答卷并生成 PDF。完整介绍、支持年份和常见问题：https://passmarkedu.com/marking-kit#faq 。
+基于 [PassMarkedu A-level](https://passmarkedu.com) 的官方真题与评分标准服务，在你使用的 AI 应用中批改答卷并生成 PDF。完整介绍、支持年份和常见问题：https://passmarkedu.com/marking-kit#faq 。
 
 ## 复制安装指令
 
 把下面这句话发给支持本地 Skill 的 AI 应用：
 
-> 请帮我安装 PassMarked A-level 阅卷 Skill：从 https://passmarkedu.com/skills/passmarkedu-marking.zip 下载，解压后把 passmarkedu-marking 文件夹放到你的 Skill 目录。安装成功后，读取 SKILL.md 和 references/onboarding.md，展示欢迎介绍并引导我连接账号；用接口实际返回的授权链接和授权码，不要使用示例值。若已保存授权则保留，不重复登录。
+> 请帮我安装 PassMarkedu A-level 阅卷 Skill：从 https://passmarkedu.com/skills/passmarkedu-marking.zip 下载，解压后把 passmarkedu-marking 文件夹放到你的 Skill 目录。安装成功后，读取 SKILL.md 和 references/onboarding.md，展示欢迎介绍并引导我连接账号；用接口实际返回的授权链接和授权码，不要使用示例值。若已保存授权则保留，不重复登录。
 
 也可以下载 zip，按所用应用的 Skill 安装方式导入。安装目录和联网权限因应用而异，以该应用的说明为准。
 
@@ -34,10 +34,10 @@ npx skills@latest add PassMarkedu/skills
 
 支持 Edexcel IAL 数学、进阶数学、物理、化学、经济、会计、生物，以及 CAIE AS & A Level 数学、进阶数学、物理、化学、经济、会计、计算机科学。只批改已收录并开放批改的官方真题及配套评分标准；具体试卷或小问暂不支持时，会在开始前说明。
 
-免费账号可批改 1 份试卷，订阅后不限次。同卷重新批改和改分不再占用次数。交付两份 PDF：批改答卷在原卷上以红色标出分数和得分点；阅卷结果包含得分总览、主要失分点、逐题错误说明、正确解法和官方评分标准。整卷答卷首页列出总分、等级及对应考季分数线；拼题卷只列得分和满分。需要复核的地方在对话中说明，改分后两份 PDF 同步更新。
+免费账号可批改 1 份试卷，订阅后不限次。同卷重新批改和改分不再占用次数。交付三份 PDF：批改答卷在原卷上以红色标出分数和得分点；阅卷结果包含得分总览、主要失分点、逐题错误说明、正确解法和官方评分标准；复核说明只列 AI 拿不准、需要你来定的地方，要改就回复「第 N 处改成 X 分」。整卷答卷首页列出总分、等级及对应考季分数线；拼题卷只列得分和满分。改分后三份 PDF 同步更新。
 
 使用能够看图、联网、处理文件且推理能力较强的模型；能选择推理强度时建议使用高强度。弱模型可能误读手写或混淆评分标准与卷面。
 
 ## 1.9 流程工具
 
-新版随包提供 `scripts/workflow.py`：一次准备材料，批量看图、统一裁剪并保存必要证据，试算后按实际失分生成解释，再下载两份 PDF。常规路径需要 Python 3；图像准备复用应用已有的 PDF 工具，不自动安装依赖。模型直接查看本题作答与官方 MS，仍负责每个得分点的判断及疑点复核。工具用法由 Skill 引导，无需使用者手动编写请求。不同模型仍可能因字迹识别和规则判断产生分差；相同证据与相同评分数据由服务端按同一规则计分。
+新版随包提供 `scripts/workflow.py`：一次准备材料，批量看图、统一裁剪并保存必要证据，试算后按实际失分生成解释，再下载批改答卷、阅卷结果和复核说明三份 PDF。常规路径需要 Python 3；图像准备复用应用已有的 PDF 工具，不自动安装依赖。模型直接查看本题作答与官方 MS，仍负责每个得分点的判断及疑点复核。工具用法由 Skill 引导，无需使用者手动编写请求。不同模型仍可能因字迹识别和规则判断产生分差；相同证据与相同评分数据由服务端按同一规则计分。

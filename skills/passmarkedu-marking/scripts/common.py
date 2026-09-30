@@ -3,7 +3,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
+
+# Apps opened from the macOS Dock get a minimal PATH without Homebrew's folders, so
+# pdftoppm/pdfinfo installed there go unseen. Appended, so the user's own tools still win.
+for _folder in ('/opt/homebrew/bin', '/usr/local/bin'):
+    _path = os.environ.get('PATH', '')
+    if os.path.isdir(_folder) and _folder not in _path.split(os.pathsep):
+        os.environ['PATH'] = _path + os.pathsep + _folder if _path else _folder
 
 
 class WorkflowError(Exception):

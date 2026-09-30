@@ -9,6 +9,7 @@ from pathlib import Path
 from common import WorkflowError, read
 
 FILE = 'corrections.json'
+DECIDED = 'decided.json'  # every mark the user has set in this run, kept after it is applied
 
 
 def _key(label: object) -> str:
@@ -44,15 +45,32 @@ def add(work: Path, label: str, marks: int) -> dict:
     return {'corrections_file': str(path), 'pending': items}
 
 
-def attach(work: Path, evidence: dict) -> dict:
-    """The evidence for an update, carrying the recorded requests as top-level `corrections`.
+def decided(work: Path) -> list[dict]:
+    """The marks the user has set in this run, latest per part, pending ones included."""
+    path = work / DECIDED
+    kept = read(path).get('decided') if path.exists() else []
+    latest = {_key(item.get('label')): item for item in (kept if isinstance(kept, list) else []) + pending(work)
+              if isinstance(item, dict)}
+    return [{'label': item['label'], 'requested_marks': item.get('requested_marks')} for item in latest.values()]
 
-    Services that predate corrections ignore the extra key (checked against the
+
+def attach(work: Path, evidence: dict) -> dict:
+    """The evidence for an update, carrying the recorded requests as top-level `corrections` and every
+    mark set so far as `decided` (the service stops listing those parts for the teacher to decide).
+
+    Services that predate corrections ignore the extra keys (checked against the
     production image 13827f4cc)."""
-    items = pending(work)
-    return {**evidence, 'corrections': items} if items else evidence
+    items, known = pending(work), decided(work)
+    out = {**evidence, 'corrections': items} if items else dict(evidence)
+    return {**out, 'decided': known} if known else out
 
 
 def clear(work: Path) -> None:
-    """After a successful update: the service has them now."""
+    """After a successful update: the service has them now; keep them as decided for later updates."""
+    known = decided(work)
+    if known:
+        path = work / DECIDED
+        temp = path.with_name(path.name + '.tmp')
+        temp.write_text(json.dumps({'decided': known}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        os.replace(temp, path)
     (work / FILE).unlink(missing_ok=True)

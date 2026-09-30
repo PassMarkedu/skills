@@ -34,6 +34,13 @@ def _has(*tools: str) -> bool:
     return all(shutil.which(tool) for tool in tools)
 
 
+def renderer() -> str:
+    """What renders pages here: ``pymupdf``, ``poppler`` (pdfinfo + pdftoppm) or ``none``."""
+    if _fitz() is not None:
+        return 'pymupdf'
+    return 'poppler' if _has('pdfinfo', 'pdftoppm') else 'none'
+
+
 def _numbered(folder: Path, prefix: str) -> dict[int, Path]:
     """pdftoppm output files ``<prefix>-<page>.<ext>`` keyed by page number."""
     found = {}
@@ -122,6 +129,25 @@ def render_cover(script: Path, target: Path) -> bool:
         with fitz.open(script) as doc:  # type: ignore[union-attr]
             page = doc[0]
             _fitz_save(page, LONG_EDGE / max(page.rect.width, page.rect.height), page.rect, target)
+        return True
+    except Exception:
+        return False
+
+
+def render_jpeg(script: Path, page: int, long_edge: int, target: Path) -> bool:
+    """One upright page as a JPEG ``long_edge`` pixels on its long side, for the service rather than for viewing."""
+    target.unlink(missing_ok=True)
+    if _has('pdftoppm'):
+        run = subprocess.run(['pdftoppm', '-f', str(page), '-l', str(page), '-jpeg', '-scale-to', str(long_edge), '-singlefile',
+                              str(script), str(target.with_suffix(''))], capture_output=True)
+        if run.returncode == 0 and target.is_file():
+            return True
+    fitz = _fitz()
+    try:
+        with fitz.open(script) as doc:  # type: ignore[union-attr]
+            source = doc[page - 1]
+            scale = long_edge / max(source.rect.width, source.rect.height)
+            target.write_bytes(source.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False).tobytes('jpeg'))
         return True
     except Exception:
         return False

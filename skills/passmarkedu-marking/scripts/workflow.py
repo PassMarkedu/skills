@@ -18,13 +18,18 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 import config
 import corrections
+import identify
 import pagemap
+import photos
 import review_detail
+import runs
+import zoom
 from common import WorkflowError, digest, ensure_dir, read
-from evidence import (compact_summary, evidence_target, judging_payload, merged, question_view,
-                      score_summary, unit_files, unit_hashes, with_reports)
-from rendering import (MAX_DPI, content_box, crop_dpi, crop_page, page_count, page_sizes, render_cover,
-                       render_pages, render_tiles, validate_box)
+from evidence import evidence_target, merged, question_view, unit_files
+from reports import (EXPLAIN, compact_summary, judging_payload, score_summary, scored_units, scoring_payload,
+                     unit_hashes, with_reports)
+from rendering import (content_box, crop_dpi, crop_page, page_count, page_sizes, render_cover,
+                       render_pages, render_tiles, renderer, validate_box)
 
 
 SAFE_TOKEN = re.compile(r'[A-Za-z0-9._:-]{1,80}')
@@ -87,6 +92,8 @@ def api(origin: str, method: str, suffix: str, payload: object = None, multipart
                     classification = 'scheme_dependency_unresolved; check the affected scoring unit and contact support'
                 elif exc.code == 429 and 'quota_exceeded' in (code, envelope.get('code')):
                     classification = 'quota_exceeded'
+                elif isinstance(detail, str) and detail in identify.ERRORS:
+                    classification = f'{detail}: {identify.ERRORS[detail]}'
         except (ValueError, OSError):
             pass
         if not classification and exc.code == 404 and suffix.split('?')[0] in {'/papers', '/question-sets'}:
@@ -146,7 +153,7 @@ MANAGED_PATHS = (
     'manifest.json', 'checklist.json', 'script.pdf', 'pages', 'tiles', 'questions',
     'evidence', 'reports', 'crops', 'evidence.json', 'score.json',
     'check.json', 'check-summary.json', 'result.json', 'question-paper.pdf',
-    'annotated_script.pdf', 'marking_report.pdf',
+    'annotated_script.pdf', 'marking_report.pdf', 'decided.json',
 )
 
 
@@ -166,53 +173,40 @@ def update_available(origin: str) -> dict | None:
     try:
         with urlopen(Request(origin + '/api/v1/marking-kit/skill'), timeout=5) as response:
             info = json.load(response)
-        local = (config.SKILL_DIR / 'VERSION').read_text(encoding='utf-8').strip()
-        if isinstance(info, dict) and version_key(info.get('version')) > version_key(local):
+        local = config.skill_version()
+        if isinstance(info, dict) and local and version_key(info.get('version')) > version_key(local):
             return {'version': info.get('version'), 'zip_url': info.get('zip_url')}
     except Exception:
         pass
     return None
 
 
-def run_directory(script: Path, chosen: str | None) -> Path:
-    if chosen:
-        run = Path(chosen).expanduser().resolve()
-        if run.exists() and not (run / 'manifest.json').exists():
-            collisions = [name for name in MANAGED_PATHS if (run / name).exists() or (run / name).is_symlink()]
-            if collisions:
-                raise WorkflowError(f'Run directory has helper output without a manifest: {", ".join(collisions)}')
-        return ensure_dir(run)
-    folder = script.parent
-    skill = config.SKILL_DIR.resolve()
-    if folder == skill or skill in folder.parents or any((p / '.git').exists() for p in (folder, *folder.parents)):
-        folder = Path.home()  # never inside a code repository or the skill itself
-    root = ensure_dir(folder / 'passmarkedu-runs')
-    name = (re.sub(r'[^\w.-]+', '-', script.stem).strip('-.') or 'script') + datetime.now().strftime('-%Y%m%d-%H%M')
-    for number in range(1, 1000):
-        run = root / (name if number == 1 else f'{name}-{number}')
-        try:
-            run.mkdir()
-            return run
-        except FileExistsError:
-            continue
-    raise WorkflowError('Could not create a new run directory')
-
-
 def start(args: argparse.Namespace) -> None:
-    script = Path(args.script).expanduser().resolve()
+    given = [Path(path).expanduser().resolve() for path in args.script]
+    pictures = [path for path in given if photos.is_photo(path)]
+    if pictures and len(pictures) != len(given):
+        raise WorkflowError('Give one PDF, or photos only (in page order), not both')
+    if not pictures and len(given) != 1:
+        raise WorkflowError('Give one PDF, or the photos of the pages in page order')
+    script = photos.combine(given) if pictures else given[0]  # photos: one PDF beside the first, used from here on
     if not is_pdf(script):
-        raise WorkflowError('Script must be an existing PDF')
+        raise WorkflowError('Script must be an existing PDF, or photos (' + ', '.join(photos.IMAGE_SUFFIXES) + ')')
     origin = config.resolve_origin()
     token_file = config.token_path(origin, Path.home(), Path.cwd())
-    run = run_directory(script, args.run_dir)
+    expired = runs.expire(runs.runs_root(script))  # runs past the 7 days a result can be corrected
+    run = runs.run_directory(script, args.run_dir, MANAGED_PATHS)
     cover = run / 'cover-page.png'
-    shown = cover.is_file() or render_cover(script, cover)
+    shown = not pictures and (cover.is_file() or render_cover(script, cover))  # photos have no cover
     texts = pagemap.page_texts(script, 1, 1)
-    print(json.dumps({'run_dir': str(run), 'cover_image': str(cover) if shown else None,
-                      'page_count': page_count(script), 'base': origin, 'api_base': origin + '/api/v1/marking-kit',
+    output = {'run_dir': str(run), 'script': str(script), 'cover_image': str(cover) if shown else None}
+    if pictures:
+        output.update(photos=len(pictures), page_images=[page['image'] for page in identify.views(script, run)])
+    print(json.dumps({**output, 'page_count': identify.pages_in(script) or None, 'renderer': renderer(), 'base': origin,
+                      'api_base': origin + '/api/v1/marking-kit',
                       'token_path': str(token_file), 'token_exists': token_file.is_file(),
                       'update': update_available(origin),
-                      'cover_text_hint': pagemap.cover_reference(texts[0]) if texts else None}, ensure_ascii=False))
+                      'cover_text_hint': pagemap.cover_reference(texts[0]) if texts else None,
+                      **({'expired_runs': expired} if expired else {})}, ensure_ascii=False))
 
 
 def paper_from_ref(reference: str, series: str | None, board: str | None) -> dict:
@@ -330,9 +324,12 @@ def prepare(args: argparse.Namespace) -> None:
         raise WorkflowError('Duplicate or unsafe question number')
     if not resumed:
         dump(manifest_path, {'origin': origin, 'identity': identity, 'script_sha256': script_sha,
-                             'lang': args.lang, 'questions': numbers, 'pages': [], 'render_guidance': 'Rendering pending'})
+                             'lang': args.lang, 'questions': numbers, 'pages': [], 'render_guidance': 'Rendering pending',
+                             'created': runs.created_now(), 'script_path': str(script)})
     state = read(manifest_path)
+    state.setdefault('script_path', str(script))  # the visible PDFs go next to it
     render_views(work, state)
+    runs.restore_views(work, state)
     dump(manifest_path, state)
     if 'paper' in identity and 'page_map' not in state:
         state['page_map'] = derive_page_map(work, checklist, state)
@@ -418,25 +415,60 @@ def selected_pages(state: dict, number: str, raw_pages: list, work: Path) -> lis
     return selected
 
 
+def question_numbers(raw: str, known: list[str]) -> list[str]:
+    """The paper's question numbers named in ``raw`` ("5,6", "Q5, Q6", "5.", " 5 "), in order, once each."""
+    found = []
+    plain = re.sub(r'(?<![A-Za-z0-9])(?:question|q)\s*\.?\s*(?=\d)', '', raw, flags=re.IGNORECASE)
+    for token in (t for t in re.split(r'[,;\s]+', plain) if t):
+        bare = token.strip('.:()[]')
+        match = next((n for n in known if n in (token, bare) or n.lower() == bare.lower()), None)
+        if match is None:
+            raise WorkflowError(f'Unknown question number {token!r}; this paper has {", ".join(known)}')
+        if match not in found:
+            found.append(match)
+    return found
+
+
+def with_images(work: Path, state: dict, view: dict) -> dict:
+    """The question's reading tiles (else whole pages), rendered again first if a submit removed them."""
+    if runs.restore_views(work, state):
+        dump(work / 'manifest.json', state)
+    tiles, whole = state.get('tiles') or [], state['pages']
+    if not view['pages']:
+        return view
+    if tiles and all(1 <= page <= len(tiles) for page in view['pages']):
+        view['tiles'] = [tile for page in view['pages'] for tile in tiles[page - 1]]
+    elif whole and all(1 <= page <= len(whole) for page in view['pages']):
+        view['whole_pages'] = [whole[page - 1] for page in view['pages']]
+    return view
+
+
 def question(args: argparse.Namespace) -> None:
     work = Path(args.work_dir).resolve()
     state = work_state(work)
-    number = str(args.number)
-    if number not in state['questions']:
-        raise WorkflowError('Unknown question number')
-    view = question_view(work, number, selected_pages(state, number, args.pages.split(',') if args.pages else [], work))
+    numbers = question_numbers(str(args.number), state['questions'])
+    if len(numbers) != 1:
+        raise WorkflowError('question takes one question number')
+    number = numbers[0]
+    raw = args.pages.split(',') if args.pages else _page_map(work).get(number) or []  # a correction reopens its pages
+    view = with_images(work, state, question_view(work, number, selected_pages(state, number, raw, work)))
     files = unit_files(work)
     held = [files[unit['unit_id']][0] for unit in view['evidence_template'] if unit['unit_id'] in files]
     target = held[0] if held else evidence_target(work, [number])
-    print(json.dumps({'evidence_file': str(target), 'evidence_exists': target.exists(), 'questions': [view]}, ensure_ascii=False))
+    print(json.dumps({'evidence_file': str(target), 'evidence_exists': target.exists(), 'explain': EXPLAIN, 'questions': [view]},
+                     ensure_ascii=False))
 
 
 def batch(args: argparse.Namespace) -> None:
     work = Path(args.work_dir).resolve()
     state = work_state(work)
-    numbers = args.numbers.split(',')
-    if not numbers or len(numbers) > 2 or len(numbers) != len(set(numbers)) or any(n not in state['questions'] for n in numbers):
-        raise WorkflowError('Batch needs one or two distinct known question numbers')
+    numbers = question_numbers(args.numbers, state['questions'])
+    if not numbers:
+        raise WorkflowError('Batch needs one or two question numbers, e.g. --numbers 1,2')
+    if len(numbers) > 2:
+        pairs = [','.join(numbers[i:i + 2]) for i in range(0, len(numbers), 2)]
+        raise WorkflowError(f'Batch takes two questions at a time: run batch --numbers {pairs[0]} now, then '
+                            + ', then '.join(f'--numbers {pair}' for pair in pairs[1:]))
     map_path = Path(args.pages_map).resolve() if args.pages_map else work / 'page-map.json'
     if not map_path.is_file():
         raise WorkflowError('No page map yet: save page-map.json in the work directory from the whole-page views, then run batch')
@@ -450,9 +482,9 @@ def batch(args: argparse.Namespace) -> None:
         raw = mapping[number]
         if not isinstance(raw, list) or not raw:
             raise WorkflowError(f'Question {number}: pages-map needs a nonempty page list including continuations')
-        views.append(question_view(work, number, selected_pages(state, number, raw, work)))
+        views.append(with_images(work, state, question_view(work, number, selected_pages(state, number, raw, work))))
     target = evidence_target(work, numbers)
-    output = {'evidence_file': str(target), 'evidence_exists': target.exists(), 'questions': views}
+    output = {'evidence_file': str(target), 'evidence_exists': target.exists(), 'explain': EXPLAIN, 'questions': views}
     if state['render_guidance']:
         output['render_guidance'] = state['render_guidance']
     print(json.dumps(output, ensure_ascii=False))
@@ -469,7 +501,7 @@ def crop(args: argparse.Namespace) -> None:
         raise WorkflowError('Crop needs installed PyMuPDF or pdfinfo/pdftoppm')
     tile_dpi = state.get('tile_dpi') or []
     seen = set()
-    regions, problems = [], []
+    regions, problems, repairs, asked = [], [], [], []
     for item in raw:
         if not isinstance(item, dict):
             raise WorkflowError('Each crop region must be an object')
@@ -481,19 +513,22 @@ def crop(args: argparse.Namespace) -> None:
         if type(page) is not int or page < 1 or page > len(sizes):
             raise WorkflowError(f'Crop {ident}: page must be an original 1-based page')
         box = validate_box(item.get('box'), f'Crop {ident}')
-        if box[2] - box[0] > 0.5 + 1e-9 or box[3] - box[1] > 0.5 + 1e-9:
-            problems.append(f'Crop {ident}: a box may cover at most half the page width and half its height; split it into smaller boxes')
+        parts = zoom.pieces(box, sizes[page - 1], tile_dpi[page - 1] if page <= len(tile_dpi) else None)
+        if parts is None:
+            problems.append(f'Crop {ident}: a zoom covers at most half the page width and half its height, and this box '
+                            f'would take more than {zoom.MAX_PIECES} of them; box only the lines in doubt')
             continue
-        dpi = crop_dpi(sizes[page - 1], box)
-        tiles_at = tile_dpi[page - 1] if page <= len(tile_dpi) else None
-        if tiles_at and dpi < min(MAX_DPI, 1.3 * tiles_at):
-            problems.append(f'Crop {ident}: renders at {dpi} dpi, too close to the {tiles_at}-dpi tile to show more; split it into narrower boxes')
-            continue
-        key = digest([state['script_sha256'], page, box, dpi, 'oriented-v2'])[:24]
-        regions.append((ident, page, box, dpi, work / 'crops' / f'{key}.png'))
+        if len(parts) > 1:  # too large for one zoom: cut, still one region of the budget
+            repairs.append(f'Crop {ident}: too large for one zoom, cut into {len(parts)} overlapping crops {ident}-1..{ident}-{len(parts)}')
+        asked.append(zoom.region_key(page, box))
+        for number, part in enumerate(parts, 1):
+            dpi = crop_dpi(sizes[page - 1], part)
+            key = digest([state['script_sha256'], page, part, dpi, 'oriented-v2'])[:24]
+            regions.append((ident if len(parts) == 1 else f'{ident}-{number}', page, part, dpi, work / 'crops' / f'{key}.png'))
     if problems:
         raise WorkflowError('; '.join(problems))
-    ensure_dir(work / 'crops')
+    folder = ensure_dir(work / 'crops')
+    new, left = zoom.budget(folder, asked)
     output = []
     for ident, page, box, dpi, path in regions:
         if not path.is_file():
@@ -502,11 +537,12 @@ def crop(args: argparse.Namespace) -> None:
             except ValueError as exc:
                 raise WorkflowError(f'Crop {ident}: {exc}') from None
         output.append({'id': ident, 'page': page, 'box': box, 'dpi': dpi, 'image': str(path)})
-    print(json.dumps({'regions': output}, ensure_ascii=False))
+    zoom.record(folder, new)
+    print(json.dumps({'regions': output, 'zooms_left': left, **({'repairs': repairs} if repairs else {})}, ensure_ascii=False))
 
 
-def do_check(work: Path, state: dict) -> tuple[dict, dict]:
-    evidence = merged(work, state)
+def do_check(work: Path, state: dict, repairs: list[str] | None = None) -> tuple[dict, dict]:
+    evidence = merged(work, state, repairs)
     checked_path = work / 'check.json'
     score_path = work / 'score.json'
     summary_path = work / 'check-summary.json'
@@ -514,28 +550,34 @@ def do_check(work: Path, state: dict) -> tuple[dict, dict]:
     if checked_path.is_file() and score_path.is_file() and summary_path.is_file():
         checked = read(checked_path)
         if checked.get('judgement_sha256') == judgement_sha:
-            read(summary_path)
+            score = read(score_path)
             if 'units' not in checked:  # checked by an earlier 1.10 helper
-                checked['units'] = unit_hashes(evidence, {}, score_path.stat().st_mtime_ns)
+                checked['units'] = unit_hashes(evidence, {}, score_path.stat().st_mtime_ns, scored_units(work, score))
                 dump(checked_path, checked)
             if not (work / 'evidence.json').is_file() or digest(read(work / 'evidence.json')) != digest(evidence):
                 dump(work / 'evidence.json', evidence)
-            return evidence, read(score_path)
-    result = api(state['origin'], 'POST', '/score', evidence)
+            # The score stands; what is left to explain follows the explanations as they are now.
+            dump(summary_path, score_summary(score, work, evidence, checked['units']))
+            return evidence, score
+    result = api(state['origin'], 'POST', '/score', scoring_payload(evidence))
     previous = (read(checked_path).get('units') or {}) if checked_path.is_file() else {}
     dump(work / 'evidence.json', evidence)
     dump(score_path, result)
-    dump(summary_path, score_summary(result, work, evidence))
     # score.json's own timestamp dates this check on the file-system clock that also dates the reports.
+    units = unit_hashes(evidence, previous, score_path.stat().st_mtime_ns, scored_units(work, result))
+    dump(summary_path, score_summary(result, work, evidence, units))
     dump(checked_path, {'judgement_sha256': judgement_sha, 'review_items': result.get('review_items') or [], 'recheck': result.get('recheck') or [],
-                        'units': unit_hashes(evidence, previous, score_path.stat().st_mtime_ns)})
+                        'units': units})
     return evidence, result
 
 
 def check(args: argparse.Namespace) -> None:
     work = Path(args.work_dir).resolve()
-    do_check(work, work_state(work))
-    print(json.dumps(compact_summary(read(work / 'check-summary.json'), work), ensure_ascii=False))
+    repairs = []
+    do_check(work, work_state(work), repairs)
+    output = compact_summary(read(work / 'check-summary.json'), work)
+    repairs += output.pop('repairs', [])  # read as meant now, then what submit will repair in the explanations
+    print(json.dumps({**output, **({'repairs': repairs} if repairs else {})}, ensure_ascii=False))
 
 
 def issue_ids(checked: dict) -> set[str]:
@@ -577,7 +619,8 @@ def submit(args: argparse.Namespace) -> None:
     if not (work / 'check.json').exists():
         raise WorkflowError('Run check and review its recheck/review items before submit')
     checked = read(work / 'check.json')
-    evidence = merged(work, state)
+    repairs = []
+    evidence = merged(work, state, repairs)
     prior_issues = issue_ids(checked)
     if digest(judging_payload(evidence)) != checked.get('judgement_sha256'):
         _, rescored = do_check(work, state)
@@ -589,7 +632,7 @@ def submit(args: argparse.Namespace) -> None:
         evidence = merged(work, state)
     elif 'units' not in checked:
         do_check(work, state)  # checked by an earlier 1.10 helper: record each unit's judgement, no new call
-    evidence = with_reports(work, evidence, require_complete=True, page_count=len(state['pages']))
+    evidence = with_reports(work, evidence, require_complete=True, page_count=len(state['pages']), repairs=repairs)
     if (checked.get('review_items') or checked.get('recheck')) and not args.reviewed:
         raise WorkflowError('Review listed items against page images, then submit with --reviewed')
     result_path = work / 'result.json'
@@ -597,13 +640,13 @@ def submit(args: argparse.Namespace) -> None:
         result = read(result_path)
         if args.result_id and args.result_id != result.get('result_id'):
             raise WorkflowError('result_id differs from saved result')
-        if result.get('_evidence_sha256') != digest(evidence):
+        if result.get('_evidence_sha256') != digest(evidence) or corrections.pending(work):  # a request must reach it
             body, content_type = multipart({'evidence': json.dumps(corrections.attach(work, evidence), ensure_ascii=False)})
             result = api(state['origin'], 'PUT', f"/results/{result['result_id']}", multipart=body, content_type=content_type)
             result['_evidence_sha256'] = digest(evidence)
             dump(result_path, result)
             corrections.clear(work)
-            for stale in (work / 'annotated_script.pdf', work / 'marking_report.pdf'):
+            for stale in (work / 'annotated_script.pdf', work / 'marking_report.pdf', work / 'review_note.pdf'):
                 stale.unlink(missing_ok=True)
     else:
         sent = corrections.attach(work, evidence) if args.result_id else evidence
@@ -624,13 +667,15 @@ def submit(args: argparse.Namespace) -> None:
         target = work / f'{label}.pdf'
         if not target.exists() or not target.read_bytes()[:4] == b'%PDF':
             asset(url, target, state['origin'], pdf=True)
-        paths[label] = str(target)
+        paths[label] = target
     review_url = result.get('review_download_url')  # optional: older services have no review note
     if isinstance(review_url, str) and review_url:
         target = work / 'review_note.pdf'
         if not target.exists() or not target.read_bytes()[:4] == b'%PDF':
             asset(review_url, target, state['origin'], pdf=True)
-        paths['review_note'] = str(target)
+        paths['review_note'] = target
+    paths = runs.deliver(state, paths)  # the copies the user sees, next to the answer PDF
+    runs.tidy(work)  # page renders come back from script.pdf when a correction needs them
     final_summary = score_summary(result, work)
     output = {'result_id': result['result_id'], 'total': result.get('total'), 'max_total': result.get('max_total'),
                       'marked_max_total': final_summary['marked_max_total'], 'unsupported': final_summary['unsupported'],
@@ -644,6 +689,8 @@ def submit(args: argparse.Namespace) -> None:
         output.update(grade=result.get('grade'), grade_range=result.get('grade_range'))
     output['check_units'] = check_units(result, work)
     output['decide_units'] = decide_units(result, work)
+    if repairs:
+        output['repairs'] = repairs
     print(json.dumps(output, ensure_ascii=False))
 
 
@@ -678,8 +725,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subs = parser.add_subparsers(dest='command', required=True)
     begin = subs.add_parser('start')
-    begin.add_argument('--script', required=True)
+    begin.add_argument('--script', required=True, nargs='+', help='one PDF, or photos of the pages in page order')
     begin.add_argument('--run-dir')
+    find = subs.add_parser('identify')
+    find.add_argument('--work-dir', required=True)
+    find.add_argument('--script', required=True)
+    asked = find.add_mutually_exclusive_group()
+    asked.add_argument('--items')
+    asked.add_argument('--items-json')
+    find.add_argument('--photo-pages', default='')
     prep = subs.add_parser('prepare')
     prep.add_argument('--work-dir', required=True)
     prep.add_argument('--script', required=True)
@@ -715,8 +769,9 @@ def main() -> int:
     fix.add_argument('--marks', type=int, required=True)
     args = parser.parse_args()
     try:
-        {'start': start, 'prepare': prepare, 'question': question, 'batch': batch, 'crop': crop,
-         'check': check, 'submit': submit, 'correct': correct}[args.command](args)
+        {'start': start, 'identify': lambda a: identify.run(a, api, config.resolve_origin()), 'prepare': prepare,
+         'question': question, 'batch': batch, 'crop': crop, 'check': check, 'submit': submit,
+         'correct': correct}[args.command](args)
         return 0
     except (WorkflowError, OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         print(f'Workflow error: {exc}', file=sys.stderr)

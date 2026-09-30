@@ -40,7 +40,7 @@ Errors: 400 bad cover values; 404 no such paper, or `detail` starting `paper_not
 | call | body | result |
 |---|---|---|
 | `POST /identify` | `{"items":[{"key","locator"?,"text"?}], "scope"?:[course keys]}` (≤40 items) | `{"items":[{"key","matched_by":"locator"\|"text"\|"none","candidates":[{question_id, board, unit_code, year, session, paper_number, question_number, course_key, match, preview}]}]}` — no charge |
-| `POST /identify-photo` | `{"image_base64","mime_type"}` (one question crop, ≤8 MB) | `{"matched_by","extracted_text","candidates":[…]}` — daily cap per account; 429 `marking_kit_photo_daily_limit` |
+| `POST /identify-photo` | `{"image_base64","mime_type"}` (one page or question, ≤8 MB) | `{"matched_by","extracted_text","candidates":[…]}` — daily cap per account; 429 `marking_kit_photo_daily_limit` |
 | `POST /question-sets` | `{"question_ids":[…], "parts"?:{"<id>":["a","c(ii)"]}}` (≤20, script order) | checklist like `/papers` but `question_set` instead of `paper`, `questions[].source`, folded `grade_boundaries`; charges one paper credit per distinct set of ids |
 
 `parts` (optional) lists the sub-parts printed on the script for a question that is only partly included; a question id absent from `parts` is marked whole. A label selects every step at or below it (`"c"` = c, c(i), c(ii); `"c(ii)"`, `"c.ii"` or `"cii"` = c(ii) only). The checklist then holds only those parts, its `max_marks`, question `marks` and folded grade lines count only them, and `question_set.parts` is echoed back. A label matching no part of that question, or an id not in `question_ids`, is 400. Send the same `question_set` object (with `parts`) in `/score` and `/results` evidence; changing `parts` for the same ids is not charged again.
@@ -60,7 +60,7 @@ Include the checklist’s `scheme_revision` in evidence. `/score` and result res
 | `GET /results/<result_id>` | — | the stored result |
 | `GET /results/<result_id>/pdf?token=...` | — | the annotated script PDF (`script_download_url`; legacy `download_url` aliases it; no header needed) |
 | `GET /results/<result_id>/pdf?kind=report&token=...` | — | the separate marking report PDF (`report_download_url`; no header needed) |
-| `GET /results/<result_id>/pdf?kind=review&token=...` | — | the review note PDF for the person running the marking, not to forward (`review_download_url`; null for older results) |
+| `GET /results/<result_id>/pdf?kind=review&token=...` | — | the review note PDF: the parts the AI was unsure of, for whoever is marking to decide (`review_download_url`; null for older results) |
 
 Result: `{result_id, paper, total, max_total, grade, grade_range, grade_boundaries, unsupported[], not_chosen[], over_answered, complete, units[], flagged[], review_items[], reliability, script_download_url, report_download_url, review_download_url, download_url, expires_at}`.
 
