@@ -18,7 +18,9 @@ AUTO_COMMENT = {'zh': '本小问全部得分。', 'en': 'Full marks for this par
 EXPLAIN = ('In each unit, with its judgement: comment, headline, mistakes, solution when it loses marks (comment and '
            'solution only when every lost mark is low confidence); solution when blank; also review_detail when it '
            'earns some but not all marks, has a low step, a medium step and earns marks, or a visual or level step '
-           '(its crop: the lines in dispute plus one line, a third of the page or less). Full marks: none.')
+           '(its crop: the lines in dispute plus one line, a third of the page or less). Full marks: none. For evidenced mechanical mistakes, add kind (calculation, rounding, transcription, '
+           'notation, mixed or other) and affected_steps containing this unit’s actual checklist IDs; no counts. '
+           'Tag only in this judging pass; preserve the score and explanation rules.')
 
 
 REPORT_FIELDS = ('comment', 'headline', 'mistakes', 'solution')

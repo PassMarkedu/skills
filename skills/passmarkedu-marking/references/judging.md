@@ -91,3 +91,18 @@ The service scores the judgement and may apply a dependency or route you did not
 - `scheme_conflict` (rare): if you believe PassMarkedu's scoring of this unit contradicts the official mark scheme (for example a mark blocked by the wrong prerequisite), say so here in one or two sentences. Only the user sees it. **Never** put such disputes, step ids (`main.s3`), or words about PassMarkedu's server or configuration into the candidate-facing fields — those submissions are rejected with 422.
 
 Full-mark units need no report prose: `submit` adds a fixed comment. Unattempted units need a solution. For a withheld unreadable point, use a neutral comment and correct solution; do not invent an error, headline or mistake to explain an uncertain reading. The precise ambiguity belongs in chat. One actual error may explain several lost points; do not duplicate it per mark.
+
+### Mechanical mistake metadata
+
+For each clearly evidenced mechanical slip, add with the original judgement
+`kind` (`calculation`, `rounding`,
+`transcription`, `notation`, `mixed`, `other`) and `affected_steps` (this unit's real
+checklist step IDs). Keep `wrote`, `why`, and `should` as student-facing prose; IDs
+are metadata. Supply no counts. The server attributes only actual remaining marks.
+For example, correct algebra reaching `4p = 0.8` followed by `p = 0.3` is calculation.
+A unit or symbol slip is notation only when the relevant knowledge and method are
+otherwise evidenced. Use mixed for an independent conceptual cause, and other for
+unclear writing. Link propagated losses only when the same evidenced cause explains
+them without an independent conceptual cause. Full-score slips claim no loss.
+Use evidence already read in the same pass; no exhaustive recomputation, extra
+crops to hunt slips, or additional judging round. Untagged mistakes remain valid.

@@ -54,8 +54,10 @@ Field rules:
 | `comment` | One sentence: the overall verdict, in words a candidate understands. |
 | `headline` | Units that lost marks: the main reason in ≤20 Chinese characters; included in the marking report’s main lost-point overview. |
 | `mistakes` | Units that lost marks: 1–4 `{"wrote", "why", "should"}`, one per actual error in the candidate's work (not per lost mark). |
+| `mistakes[].kind` | Optional `calculation`, `rounding`, `transcription`, `notation`, `mixed`, or `other`; see [mechanical mistake metadata](judging.md#mechanical-mistake-metadata). |
+| `mistakes[].affected_steps` | Optional list of this unit's real checklist step IDs; metadata, never candidate-facing prose. Unknown or malformed tags are dropped harmlessly; legacy untagged items remain valid. |
 | `solution` | Units that lost marks or were not attempted: 2–6 key lines of a correct method, ending with the answer. |
-| `scheme_conflict` | Only when you think PassMarkedu's scoring contradicts the official mark scheme; user-only. Step ids or server wording in any other field → 422. |
+| `scheme_conflict` | Only when you think PassMarkedu's scoring contradicts the official mark scheme; user-only. Step IDs or server wording in candidate-facing prose → 422; real IDs in `affected_steps` metadata are allowed. |
 | `steps[].step_id` | From the checklist. Give every step of the unit; for alternative routes, the steps of the route(s) the candidate used (other routes may be left out). Missing steps on the chosen route count as not earned and are flagged. |
 | `steps[].present` | `true` / `false` (JSON booleans). |
 | `steps[].awarded` | Integer: `point` steps with `step_marks` > 1, and `level` steps (marks within the level's band). |
