@@ -2,7 +2,7 @@
 name: passmarkedu-marking
 description: Mark a candidate's scanned CAIE (Cambridge International AS & A Level) or Pearson Edexcel IAL exam script against the official mark scheme, point by point, and return an annotated-script PDF and a separate marking-report PDF with explanations and official mark-scheme pages. Use after installing this skill to welcome the user and connect their account, when a user uploads a scanned exam paper (PDF or photos) and asks to mark / grade / 判分 / 批改 / 阅卷 it, or asks to change a mark on a paper this skill already marked.
 metadata:
-  version: 1.10.8
+  version: 1.10.9
 ---
 
 <!-- Overview for people browsing the skill (e.g. on SkillHub). Not instructions: the rules start at the heading below. -->
